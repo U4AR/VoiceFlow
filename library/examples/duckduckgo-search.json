@@ -1,0 +1,49 @@
+{
+ "id": "duckduckgo-search",
+ "name": "Web search (DuckDuckGo)",
+ "description": "Search the web with DuckDuckGo and return the results: title, link and snippet. No sign-in needed.",
+ "sites": [
+  "html.duckduckgo.com"
+ ],
+ "tags": [
+  "web",
+  "search",
+  "duckduckgo",
+  "google"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to search for"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://html.duckduckgo.com/html/?q={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "div.result",
+   "timeout": 12000
+  },
+  {
+   "do": "extract",
+   "as": "results",
+   "items": "div.result:not(.result--ad)",
+   "limit": 10,
+   "fields": {
+    "title": "a.result__a",
+    "link": {
+     "sel": "a.result__a",
+     "attr": "url"
+    },
+    "snippet": ".result__snippet"
+   }
+  }
+ ],
+ "output": "{{results}}",
+ "notes": "Checked on html.duckduckgo.com (Oct 2026): 10 results; links are unwrapped from DuckDuckGo's redirect."
+}

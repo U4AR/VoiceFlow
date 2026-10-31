@@ -1,0 +1,1 @@
+import"./_virtual_wxt-html-plugins-P2Xu9kJm.js";import{n as e,t}from"./jsx-runtime-CGfx9-g9.js";import{t as n}from"./Panel-D4IFiy5X.js";import{n as r}from"./theme-DXSxQcgH.js";var i=e(),a=t(),o=document.querySelector(`#app-container`);if(!o)throw Error(`Cannot find #app-container`);r(),(0,i.createRoot)(o).render((0,a.jsx)(n,{}));

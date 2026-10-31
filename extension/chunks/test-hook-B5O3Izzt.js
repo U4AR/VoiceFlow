@@ -1,0 +1,1 @@
+function e(e,t=`panel`){}export{e as t};

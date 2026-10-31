@@ -1,0 +1,80 @@
+{
+ "id": "topic-briefing",
+ "name": "Topic briefing",
+ "description": "Brief me on a topic: the Wikipedia summary, top web results and YouTube videos, combined by a fast model into a short briefing with links. Built from wikipedia-summary, duckduckgo-search and youtube-search.",
+ "sites": [],
+ "tags": [
+  "research",
+  "briefing",
+  "summary",
+  "topic"
+ ],
+ "model": "fast",
+ "inputs": {
+  "topic": {
+   "type": "string",
+   "required": true,
+   "description": "what to brief on"
+  }
+ },
+ "steps": [
+  {
+   "do": "flow",
+   "id": "wikipedia-summary",
+   "input": {
+    "topic": "{{topic}}"
+   },
+   "as": "wiki",
+   "optional": true
+  },
+  {
+   "do": "flow",
+   "id": "duckduckgo-search",
+   "input": {
+    "query": "{{topic}}"
+   },
+   "as": "web",
+   "optional": true
+  },
+  {
+   "do": "flow",
+   "id": "youtube-search",
+   "input": {
+    "query": "{{topic}}"
+   },
+   "as": "videos",
+   "optional": true
+  },
+  {
+   "do": "take",
+   "in": "{{web}}",
+   "n": 5,
+   "as": "web"
+  },
+  {
+   "do": "take",
+   "in": "{{videos}}",
+   "n": 5,
+   "as": "videos"
+  },
+  {
+   "do": "ai",
+   "model": "fast",
+   "prompt": "Write a short briefing on: {{topic}}. Five bullet points of key facts, then 'Read' with the 3 best links and 'Watch' with the 2 best videos (title and link). Use only the data given.",
+   "input": {
+    "wikipedia": "{{wiki}}",
+    "web": "{{web}}",
+    "videos": "{{videos}}"
+   },
+   "as": "briefing"
+  }
+ ],
+ "output": {
+  "briefing": "{{briefing}}",
+  "sources": {
+   "wikipedia": "{{wiki.title}}",
+   "web": "{{web}}",
+   "videos": "{{videos}}"
+  }
+ }
+}

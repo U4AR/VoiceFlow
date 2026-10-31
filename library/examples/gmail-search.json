@@ -1,0 +1,64 @@
+{
+ "id": "gmail-search",
+ "name": "Search Gmail",
+ "description": "Search the signed-in Gmail account and return the matching mails: subject, sender name and address, date and the preview text. The query uses Gmail search syntax.",
+ "sites": [
+  "mail.google.com"
+ ],
+ "tags": [
+  "gmail",
+  "email",
+  "mail",
+  "inbox",
+  "search"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "Gmail search, e.g. credits newer_than:3d or from:amazon"
+  },
+  "account": {
+   "type": "number",
+   "default": 0,
+   "description": "which signed-in Gmail account (0 = the first)"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://mail.google.com/mail/u/{{account}}/#search/{{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "tr.zA",
+   "timeout": 12000,
+   "optional": true
+  },
+  {
+   "do": "extract",
+   "as": "mails",
+   "items": "tr.zA",
+   "limit": 25,
+   "fields": {
+    "subject": "span.bog",
+    "from": {
+     "sel": "span[email]",
+     "attr": "name"
+    },
+    "email": {
+     "sel": "span[email]",
+     "attr": "email"
+    },
+    "date": {
+     "sel": "td.xW span[title]",
+     "attr": "title"
+    },
+    "snippet": "span.y2"
+   }
+  }
+ ],
+ "output": "{{mails}}",
+ "notes": "Checked on real Gmail (Oct 2026): rows are tr.zA (unread rows also have zE, so do not use it). Needs the user signed in. An empty list means nothing matched. For mail bodies use gmail-read-mails."
+}

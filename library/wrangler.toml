@@ -1,0 +1,16 @@
+# Voice Agent flow library: a Cloudflare Worker (API) + static page + D1 database.
+# Deploy with deploy.cmd (Windows) or node deploy.mjs; it creates the database and fills in database_id below.
+name = "voice-agent-flows"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "none"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "voice-agent-flows"
+database_id = "00000000-0000-0000-0000-000000000000"

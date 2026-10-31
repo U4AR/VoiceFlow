@@ -1,0 +1,3 @@
+This product incorporates Nanobrowser (Apache-2.0), https://github.com/nanobrowser/nanobrowser at 19dc8e8a9be6ed06c0ef9ec7de8d84bf6a88c458.
+Selected peerd egress helpers (Apache-2.0), https://github.com/NotASithLord/peerd at d7174b66494cc0c3dd466dc9a8ab74b36a5d1491.
+See src/vendor/peerd/SOURCE.txt and LICENSE for modifications and terms.

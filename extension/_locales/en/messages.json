@@ -1,0 +1,17 @@
+{
+  "extName": {
+    "message": "Voice Agent"
+  },
+  "extDescription": {
+    "message": "Hold, speak and release to dictate or control your browser. Powered by your Meta API key."
+  },
+  "actionTitle": {
+    "message": "Open Nanobrowser"
+  },
+  "commandOpenPanel": {
+    "message": "Open the Nanobrowser panel"
+  },
+  "menuAskAboutSelection": {
+    "message": "Ask Nanobrowser about this"
+  }
+}

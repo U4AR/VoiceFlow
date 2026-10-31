@@ -1,0 +1,5 @@
+Source: https://github.com/NotASithLord/peerd
+Commit: d7174b66494cc0c3dd466dc9a8ab74b36a5d1491
+Apache-2.0. Files copied from extension/shared and peerd-egress/fetch.
+Modified safe-fetch.js imports and inlined upstream redirect predicate; removed unused allowlist re-export. errors.js import made relative.
+No peerd UI, agent loop, VM or sandbox is included.

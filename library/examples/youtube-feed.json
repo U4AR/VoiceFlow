@@ -1,0 +1,51 @@
+{
+ "id": "youtube-feed",
+ "name": "YouTube home feed",
+ "description": "Open YouTube's home page and list the recommended videos: title, channel, link and the views/age line.",
+ "sites": [
+  "youtube.com"
+ ],
+ "tags": [
+  "youtube",
+  "videos",
+  "feed",
+  "recommended"
+ ],
+ "model": "none",
+ "inputs": {},
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.youtube.com/"
+  },
+  {
+   "do": "wait",
+   "for": "ytd-rich-item-renderer a[href*=\"/watch\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "videos",
+   "items": "ytd-rich-item-renderer",
+   "limit": 24,
+   "fields": {
+    "title": "h3",
+    "channel": "ytd-channel-name a, a.ytAttributedStringLink, a[href^=\"/@\"]",
+    "link": {
+     "sel": "a[href*=\"/watch\"]",
+     "attr": "url"
+    },
+    "meta": "#metadata-line, yt-content-metadata-view-model"
+   }
+  },
+  {
+   "do": "filter",
+   "in": "{{videos}}",
+   "field": "title",
+   "op": "exists",
+   "as": "videos"
+  }
+ ],
+ "output": "{{videos}}",
+ "notes": "Checked on the signed-in YouTube home feed (Oct 2026 layout, yt-lockup): about 20 videos. Signed out, the feed may be empty."
+}

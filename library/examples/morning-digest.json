@@ -1,0 +1,75 @@
+{
+ "id": "morning-digest",
+ "name": "Morning digest",
+ "description": "One briefing from three sites: unread Gmail from the last day, the Hacker News front page and the YouTube home feed, summarised by a fast model. Built from gmail-search, hackernews-top and youtube-feed.",
+ "sites": [],
+ "tags": [
+  "digest",
+  "morning",
+  "gmail",
+  "news",
+  "youtube"
+ ],
+ "model": "fast",
+ "inputs": {},
+ "steps": [
+  {
+   "do": "flow",
+   "id": "gmail-search",
+   "input": {
+    "query": "is:unread newer_than:1d"
+   },
+   "as": "mail",
+   "optional": true
+  },
+  {
+   "do": "flow",
+   "id": "hackernews-top",
+   "as": "news",
+   "optional": true
+  },
+  {
+   "do": "flow",
+   "id": "youtube-feed",
+   "as": "videos",
+   "optional": true
+  },
+  {
+   "do": "take",
+   "in": "{{mail}}",
+   "n": 10,
+   "as": "mail"
+  },
+  {
+   "do": "take",
+   "in": "{{news}}",
+   "n": 10,
+   "as": "news"
+  },
+  {
+   "do": "take",
+   "in": "{{videos}}",
+   "n": 8,
+   "as": "videos"
+  },
+  {
+   "do": "ai",
+   "model": "fast",
+   "prompt": "Write my morning digest in three short sections: Mail (who wrote and what needs a reply), News (the 5 most interesting stories with links) and Videos (3 picks with links).",
+   "input": {
+    "mail": "{{mail}}",
+    "news": "{{news}}",
+    "videos": "{{videos}}"
+   },
+   "as": "digest"
+  }
+ ],
+ "output": {
+  "digest": "{{digest}}",
+  "counts": {
+   "mail": "{{mail}}",
+   "news": "{{news}}",
+   "videos": "{{videos}}"
+  }
+ }
+}

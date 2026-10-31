@@ -1,0 +1,17 @@
+{
+  "name": "voice-agent-flows",
+  "version": "1.0.0",
+  "description": "Online library of Voice Agent browser flows (Cloudflare Worker + D1).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:local": "wrangler d1 execute voice-agent-flows --local --file schema.sql",
+    "deploy": "node deploy.mjs",
+    "test": "node test-api.mjs http://127.0.0.1:8787"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.156.0"
+  },
+  "private": true
+}

@@ -1,0 +1,74 @@
+{
+ "id": "flipkart-search",
+ "name": "Search Flipkart",
+ "description": "Search Flipkart and return the products on the first results page: title, price, rating and link. Optional maxPrice filter.",
+ "sites": [
+  "flipkart.com"
+ ],
+ "tags": [
+  "flipkart",
+  "shopping",
+  "search",
+  "products",
+  "price"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to search for"
+  },
+  "maxPrice": {
+   "type": "number",
+   "description": "highest price in rupees"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.flipkart.com/search?q={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "div[data-id]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "products",
+   "items": "div[data-id]",
+   "limit": 24,
+   "fields": {
+    "title": {
+     "sel": "img",
+     "attr": "alt"
+    },
+    "price": "div.hZ3P6w",
+    "rating": "div.MKiFS6",
+    "link": {
+     "sel": "a[href*=\"/p/\"]",
+     "attr": "url"
+    }
+   }
+  },
+  {
+   "do": "filter",
+   "in": "{{products}}",
+   "field": "title",
+   "op": "exists",
+   "as": "products"
+  },
+  {
+   "do": "filter",
+   "if": "{{maxPrice}}",
+   "in": "{{products}}",
+   "field": "price",
+   "op": "lte",
+   "value": "{{maxPrice}}",
+   "as": "products"
+  }
+ ],
+ "output": "{{products}}",
+ "notes": "Checked on flipkart.com (Oct 2026). Flipkart's class names (hZ3P6w price, MKiFS6 rating) are generated and change every few weeks: if price comes back empty, inspect_page and save a new version."
+}

@@ -1,0 +1,81 @@
+{
+ "id": "amazon-search",
+ "name": "Search Amazon.in",
+ "description": "Search Amazon.in and return the products on the first results page: title, price, rating, link and ASIN. Optional maxPrice and minRating filter the list.",
+ "sites": [
+  "amazon.in"
+ ],
+ "tags": [
+  "amazon",
+  "shopping",
+  "search",
+  "products",
+  "price"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to search for"
+  },
+  "maxPrice": {
+   "type": "number",
+   "description": "highest price in rupees"
+  },
+  "minRating": {
+   "type": "number",
+   "description": "lowest star rating, e.g. 4"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.amazon.in/s?k={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "div[data-component-type=\"s-search-result\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "products",
+   "items": "div[data-component-type=\"s-search-result\"]",
+   "limit": 24,
+   "fields": {
+    "title": "h2 span",
+    "price": "span.a-price span.a-offscreen",
+    "rating": "span.a-icon-alt",
+    "link": {
+     "sel": "a:has(> h2), a.a-link-normal[href*=\"/dp/\"], a[href*=\"/sspa/\"]",
+     "attr": "url"
+    },
+    "asin": {
+     "sel": ".",
+     "attr": "data-asin"
+    }
+   }
+  },
+  {
+   "do": "filter",
+   "if": "{{maxPrice}}",
+   "in": "{{products}}",
+   "field": "price",
+   "op": "lte",
+   "value": "{{maxPrice}}",
+   "as": "products"
+  },
+  {
+   "do": "filter",
+   "if": "{{minRating}}",
+   "in": "{{products}}",
+   "field": "rating",
+   "op": "gte",
+   "value": "{{minRating}}",
+   "as": "products"
+  }
+ ],
+ "output": "{{products}}",
+ "notes": "Checked on amazon.in (Oct 2026): 22 results per page; sponsored items are included (their links are unwrapped to the product page)."
+}

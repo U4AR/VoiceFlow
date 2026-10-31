@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><script src="/va-logger.js"></script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Voice Agent — Workflows</title>  <script type="module" crossorigin src="/chunks/workflows-Adofr2hp.js"></script>
+  <link rel="modulepreload" crossorigin href="/chunks/_virtual_wxt-html-plugins-P2Xu9kJm.js">
+  <link rel="stylesheet" crossorigin href="/assets/workflows-B5q9ow6e.css">
+</head><body>
+    <header><div><span class="tag">VOICE AGENT · 0.2</span><h1>Your repeatable browser tools</h1><p>Create, inspect, save, and run workflows. Page changes are reversible; no automatic clicks or submissions.</p></div><a id="dictation-link" href="voice.html">← Voice settings</a></header>
+    <main class="workspace"><section class="library"><h2>Library</h2><button id="pause-automatic">Pause automatic workflows</button><select id="library" size="8" aria-label="Saved workflows"></select><button id="delete">Delete selected</button><h3>Recent runs</h3><div id="history" class="history"></div></section>
+      <section class="editor"><h2>Create a workflow</h2><label for="request">Describe what should happen</label><textarea id="request" rows="2" placeholder="Hide Shorts when I open YouTube, or show IST beside UTC times"></textarea><button id="generate">Ask Meta to create</button><p id="source" class="note">Meta authors new tools and chooses their sites and triggers. Review the returned workflow before saving.</p>
+
+        <label for="document">Workflow JSON · editable</label><textarea id="document" rows="17" spellcheck="false"></textarea><div id="permissions" class="permissions"></div><label class="check"><input id="automatic" type="checkbox"> Auto-run on matching URLs after saving (deterministic workflows
+          only)</label>
+        <label for="arguments">Function inputs (JSON)</label><textarea id="arguments" rows="3">{}</textarea>
+        <div class="buttons"><button id="save">Save workflow</button><button id="run">Run on target page</button><button id="cancel-run">Stop workflows</button><button id="restore">Undo page annotations</button></div><div class="buttons"><button id="export">Export JSON</button><label class="file-label">Import JSON<input id="import" type="file" accept="application/json,.json"></label></div>
+        <p id="status" role="status">Loading library…</p><p id="target" class="note"></p><h3>Result</h3><pre id="result">No run yet.</pre><button id="apply" disabled>Apply reviewed text to selection</button><p class="note">Only the Apply button replaces selected text. Workflows cannot send, submit, purchase, enter secrets, or run
+          arbitrary generated JavaScript.</p>
+      </section></main></body></html>

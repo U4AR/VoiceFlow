@@ -1,0 +1,43 @@
+{
+ "id": "hackernews-top",
+ "name": "Hacker News front page",
+ "description": "List the stories on the Hacker News front page: rank, title, link and site.",
+ "sites": [
+  "news.ycombinator.com"
+ ],
+ "tags": [
+  "hacker news",
+  "tech",
+  "news"
+ ],
+ "model": "none",
+ "inputs": {},
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://news.ycombinator.com/"
+  },
+  {
+   "do": "wait",
+   "for": "tr.athing",
+   "timeout": 12000
+  },
+  {
+   "do": "extract",
+   "as": "stories",
+   "items": "tr.athing",
+   "limit": 30,
+   "fields": {
+    "rank": "span.rank",
+    "title": "span.titleline > a",
+    "link": {
+     "sel": "span.titleline > a",
+     "attr": "href"
+    },
+    "site": "span.sitestr"
+   }
+  }
+ ],
+ "output": "{{stories}}",
+ "notes": "Checked on news.ycombinator.com (Oct 2026): 30 stories."
+}

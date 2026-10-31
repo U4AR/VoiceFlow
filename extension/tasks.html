@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Voice Agent tasks</title>
+<script src="/va-logger.js"></script>
+<style>
+  :root { --bg:#f1f4f1; --surface:#fff; --ink:#1d2a32; --muted:#56666e; --rule:#d3dbd6; --accent:#0f7b6c; --warn:#a5513d; --ask-bg:#fff6e0; --ask-rule:#d9a43a; --ask-ink:#7a5408; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#131b1f; --surface:#1b262b; --ink:#e4ece8; --muted:#9fb1b4; --rule:#2d3b41; --accent:#3fb8a5; --warn:#ff9a7e; --ask-bg:#3b2f12; --ask-rule:#b88a2e; --ask-ink:#ffd58a; color-scheme: dark; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,'Segoe UI',sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 28px 0 10px; }
+  p.sub { color: var(--muted); margin: 0 0 18px; }
+  .task { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; margin-bottom: 10px; display: grid; gap: 8px; }
+  .name { font-weight: 600; } .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .why { font-size: 14px; border-left: 3px solid var(--rule); padding-left: 10px; white-space: pre-wrap; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1; }
+  form.tb { display: flex; align-items: center; gap: 4px; border: 1px solid var(--rule); border-radius: 12px; background: var(--bg); padding: 4px 4px 4px 12px; }
+  form.tb:focus-within { border-color: var(--accent); }
+  form.tb input[type=text] { flex: 1; border: 0; outline: 0; background: transparent; padding: 6px 0; min-width: 0; }
+  .ib { width: 34px; height: 34px; border-radius: 9px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .ib:hover { background: var(--surface); color: var(--ink); } .ib.go { background: var(--accent); color: #fff; } .ib.rec { background: #c0392b; color: #fff; }
+  .phead { display: flex; gap: 8px; align-items: center; } .phead .ptitle { flex: 1; } .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .link { color: var(--accent); cursor: pointer; font-weight: 600; font-size: 13px; } .link.muted { color: var(--muted); font-weight: 500; }
+  .tbwrap { display: grid; gap: 6px; }
+  button.ghost { background: transparent; } button.right { margin-left: auto; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+  .steps li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+  .steps .ico { font-weight: 700; text-align: center; } .steps .done .ico { color: #1f8f4e; } .steps .failed .ico { color: var(--warn); }
+  .steps .det { display: block; color: var(--warn); font-size: 13px; }
+  .why { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; background: var(--bg); border-radius: 10px; padding: 8px 10px; border-left: 0; }
+  .why.open { -webkit-line-clamp: unset; }
+  a.toggle { color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 600; }
+  button { font: 600 14px system-ui,sans-serif; border-radius: 10px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; } button.stop { color: var(--warn); }
+  button.mic.rec { background: #a5313d; border-color: #a5313d; color: #fff; }
+  input[type=text], input[type=number] { font: 14px system-ui,sans-serif; border-radius: 10px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); padding: 7px 10px; }
+  input[type=text] { width: 100%; box-sizing: border-box; } input[type=number] { width: 90px; }
+  .status { color: var(--warn); font-size: 13px; } .status:empty { display: none; }
+  .prompt { background: var(--ask-bg); border: 1px solid var(--ask-rule); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+  .ptitle { font-weight: 700; color: var(--ask-ink); } .pmsg { white-space: pre-wrap; } .pnote { color: var(--muted); font-size: 13px; }
+  .setting { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .empty { color: var(--muted); }
+  .badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--bg); }
+  .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; }
+  .big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); } th { color: var(--muted); font-weight: 600; } td.n, th.n { text-align: right; }
+  .today { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .today .k { color: var(--muted); font-size: 12px; } .today .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .today .wide { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+  @media (max-width: 640px) { .today { grid-template-columns: repeat(2, 1fr); } }
+  .fjson { max-height: 260px; overflow: auto; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--bg); border-radius: 8px; padding: 8px; white-space: pre-wrap; }
+  .flow { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; display: grid; gap: 6px; }
+  .flow .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; } .flow .id { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; }
+  .chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+  .chip.ok { color: #1f8f4e; } .chip.bad { color: var(--warn); }
+  #mcpLog td { white-space: nowrap; font-size: 13px; } #mcpLog td:last-child { white-space: normal; color: var(--muted); }
+  .prices { display: grid; grid-template-columns: auto repeat(3, auto); gap: 6px 10px; align-items: center; margin-top: 10px; font-size: 14px; }
+</style></head>
+<body><main>
+  <h1>Tasks</h1>
+  <p class="sub">What your agent is doing now. Answer its questions, send a running task another instruction, open its chat, or stop it.</p>
+  <h2>Running now</h2><div id="running"></div>
+  <h2>Recent</h2><div id="recent"></div>
+  <h2>Spending</h2>
+  <div class="card">
+    <div class="today" id="today"></div>
+    <div class="meta" style="margin-top:12px">All counted so far: <strong id="total">$0.00</strong> · <span id="since"></span></div>
+    <table id="byModel" aria-label="Spending by model"></table>
+    <p class="meta">An estimate from the tokens Meta reports for each call and the prices below (Meta's list prices; check your Billing page for the exact charge). Reasoning tokens are counted as output.</p>
+    <details><summary>Prices used</summary>
+      <div class="prices" id="prices"></div>
+      <div class="row" style="margin-top:10px"><button id="savePrices">Save prices</button><button id="resetPrices">Use Meta's list prices</button><button id="resetCost" class="stop">Start counting again from zero</button></div>
+    </details>
+  </div>
+  <h2>Flows</h2>
+  <p class="sub" style="margin-bottom:10px">Saved, tested functions your agent runs in one step (for example “read my Gmail results”). The agent writes them when you ask (or after “Automate it”); flows from the online library are used only after you approve them.</p>
+  <div id="flows"></div>
+  <details class="card" style="margin-top:8px"><summary><strong>Online flow library</strong> <span class="meta" id="repoState"></span></summary>
+    <div style="display:grid;gap:10px;margin-top:10px">
+      <label>Library address<br><input type="text" id="repo" placeholder="https://voice-agent-flows.yourname.workers.dev"></label>
+      <label>Your name on shared flows (optional)<br><input type="text" id="author" maxlength="40" placeholder="anonymous"></label>
+      <label class="row"><input type="checkbox" id="flowsOnline"> <span>Let the agent search the online library for flows</span></label>
+      <div class="row"><button id="saveRepo">Save</button><button id="testRepo" class="ghost">Test the connection</button><span class="meta" id="repoMsg"></span></div>
+      <p class="meta">Sharing a flow sends only its steps (no page data). You confirm every share. Flows written by others are checked again here and run only on the sites they list.</p>
+    </div>
+  </details>
+  <details class="card" style="margin-top:8px" id="mcpCard"><summary><strong>Apps on this computer (MCP)</strong> <span class="meta" id="mcpState"></span></summary>
+    <div style="display:grid;gap:10px;margin-top:10px">
+      <p class="meta" style="margin:0">Lets Claude Code, Claude Desktop and other MCP apps on this computer search and run your flows in this browser, with your sign-ins (for example “read my Gmail results” inside a Claude Code pipeline). Every run is listed below.</p>
+      <label class="row"><input type="checkbox" id="mcpEnabled"> <span><strong>Let apps on this computer use my flows</strong></span></label>
+      <label>Pairing code <span class="meta">(from <code>node voice-agent-mcp.mjs --pairing-code</code>)</span><br><input type="text" id="mcpCode" placeholder="va-xxxxx-xxxxx-xxxxx-xxxxx" autocomplete="off" spellcheck="false"></label>
+      <label class="row"><input type="checkbox" id="mcpAllowSave"> <span>Also let them add new flows <span class="meta">(off: they can only run the flows you have)</span></span></label>
+      <div class="row"><button id="mcpSave">Save</button><span class="meta" id="mcpMsg"></span></div>
+      <details><summary class="link muted">How to connect Claude Code or Claude Desktop</summary>
+        <pre class="fjson" id="mcpHow"></pre></details>
+      <div id="mcpLog"></div>
+    </div>
+  </details>
+  <h2>Settings</h2>
+  <label class="setting"><input type="checkbox" id="strongModel"><span><strong>Use Muse Wonder for complex tasks</strong><br><span class="meta">Off by default: every task runs on Muse Spark, which costs about a third as much for input and a fifth for output. Turn on if hard tasks go wrong on Spark.</span></span></label>
+  <div style="height:10px"></div>
+  <label class="setting"><input type="checkbox" id="suggestAutomate"><span><strong>Suggest automating finished tasks</strong><br><span class="meta">On by default. When a task finishes, a quick check (about a tenth of a cent) says whether it is worth turning into a reusable workflow, and the popup offers "Automate it".</span></span></label>
+  <div style="height:10px"></div>
+  <label class="setting"><input type="checkbox" id="allowHistory"><span><strong>Let the agent search my browser history</strong><br><span class="meta" id="histHint">Off by default. When on, the agent can look up pages you visited in the last 14 days (titles and addresses) if a task needs it, for example "the form I had open yesterday". It always remembers your recent tasks with it either way.</span></span></label>
+  <div style="height:10px"></div>
+  <label class="setting"><input type="checkbox" id="osNotice"><span><strong>Show running tasks in a Windows notification</strong><br><span class="meta" id="osHint">Off by default. One notification lists the tasks that are running and stays until they finish; it goes away by itself when nothing is running.</span></span></label>
+  <details style="margin-top:14px"><summary>Advanced: how much the agent re-sends each step</summary>
+    <div style="height:10px"></div>
+    <label class="setting"><input type="checkbox" id="allTools"><span><strong>Send every tool's full description every step</strong><br><span class="meta">Off by default: the agent gets the tools most tasks need, and loads the others (screenshot, fill_form, wait, workflows…) when it needs them. Turning this on adds about 4,000 tokens to every step.</span></span></label>
+    <div style="height:10px"></div>
+    <label class="setting"><input type="checkbox" id="fullHistory"><span><strong>Re-send every earlier page in full</strong><br><span class="meta">Off by default: page observations older than the newest two are replaced by a one-line note the agent can reopen or search (look_back). Turning this on makes long tasks several times more expensive.</span></span></label>
+  </details>
+</main><script src="/va-prompt-ui.js"></script><script src="/tasks.js"></script></body></html>

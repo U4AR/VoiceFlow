@@ -1,0 +1,113 @@
+{
+ "id": "price-compare",
+ "name": "Compare prices: Amazon vs Flipkart",
+ "description": "Search Amazon.in and Flipkart for the same thing and return one list sorted by price, each item marked with its shop. Optional maxPrice. Built from amazon-search and flipkart-search.",
+ "sites": [],
+ "tags": [
+  "shopping",
+  "price",
+  "compare",
+  "amazon",
+  "flipkart"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to buy"
+  },
+  "maxPrice": {
+   "type": "number",
+   "description": "budget in rupees"
+  },
+  "top": {
+   "type": "number",
+   "default": 10,
+   "description": "how many to return"
+  }
+ },
+ "steps": [
+  {
+   "do": "flow",
+   "id": "amazon-search",
+   "input": {
+    "query": "{{query}}",
+    "maxPrice": "{{maxPrice}}"
+   },
+   "as": "amazon",
+   "optional": true
+  },
+  {
+   "do": "flow",
+   "id": "flipkart-search",
+   "input": {
+    "query": "{{query}}",
+    "maxPrice": "{{maxPrice}}"
+   },
+   "as": "flipkart",
+   "optional": true
+  },
+  {
+   "do": "map",
+   "in": "{{amazon}}",
+   "item": "p",
+   "value": {
+    "shop": "Amazon",
+    "title": "{{p.title}}",
+    "price": "{{p.price}}",
+    "rating": "{{p.rating}}",
+    "link": "{{p.link}}"
+   },
+   "as": "amazon"
+  },
+  {
+   "do": "map",
+   "in": "{{flipkart}}",
+   "item": "p",
+   "value": {
+    "shop": "Flipkart",
+    "title": "{{p.title}}",
+    "price": "{{p.price}}",
+    "rating": "{{p.rating}}",
+    "link": "{{p.link}}"
+   },
+   "as": "flipkart"
+  },
+  {
+   "do": "concat",
+   "in": [
+    "{{amazon}}",
+    "{{flipkart}}"
+   ],
+   "as": "all"
+  },
+  {
+   "do": "filter",
+   "in": "{{all}}",
+   "field": "price",
+   "op": "exists",
+   "as": "all"
+  },
+  {
+   "do": "unique",
+   "in": "{{all}}",
+   "by": "link",
+   "as": "all"
+  },
+  {
+   "do": "sort",
+   "in": "{{all}}",
+   "by": "price",
+   "as": "all"
+  },
+  {
+   "do": "take",
+   "in": "{{all}}",
+   "n": "{{top}}",
+   "as": "all"
+  }
+ ],
+ "output": "{{all}}",
+ "notes": "If one shop fails (site changed or blocked), the other's results still come back."
+}

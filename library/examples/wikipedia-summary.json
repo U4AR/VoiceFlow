@@ -1,0 +1,50 @@
+{
+ "id": "wikipedia-summary",
+ "name": "Wikipedia summary",
+ "description": "Look a topic up on English Wikipedia and return the article title, address and its first paragraphs.",
+ "sites": [
+  "en.wikipedia.org"
+ ],
+ "tags": [
+  "wikipedia",
+  "encyclopedia",
+  "summary",
+  "facts"
+ ],
+ "model": "none",
+ "inputs": {
+  "topic": {
+   "type": "string",
+   "required": true,
+   "description": "the topic, e.g. Kerala backwaters"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://en.wikipedia.org/wiki/Special:Search?search={{topic}}"
+  },
+  {
+   "do": "wait",
+   "for": "#mw-content-text p",
+   "timeout": 12000
+  },
+  {
+   "do": "extract",
+   "as": "title",
+   "sel": "h1#firstHeading"
+  },
+  {
+   "do": "extract",
+   "as": "paragraphs",
+   "sel": "#mw-content-text p:not(.mw-empty-elt)",
+   "all": true,
+   "limit": 4
+  }
+ ],
+ "output": {
+  "title": "{{title}}",
+  "paragraphs": "{{paragraphs}}"
+ },
+ "notes": "If the search has no exact article, Wikipedia shows a results list and paragraphs may be empty."
+}

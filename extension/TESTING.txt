@@ -1,0 +1,144 @@
+VOICE AGENT 0.9 — CONTEXTUAL VOICE AND REUSABLE FUNCTIONS
+
+INSTALL / UPDATE
+Extract the complete ZIP. First install: chrome://extensions → Developer mode →
+Load unpacked → extracted folder. Updating: replace files in the SAME unpacked
+folder, then Reload to retain your local key, name and saved flows. Re-enable the
+microphone after reload. Keep only one copy enabled. Legacy download ZIP names
+point to this same package; there is no separate New Tab edition.
+
+SETUP
+Name your agent in Settings (default: Nova); you can change it later. Enter your
+Meta Model API key, verify the connection and Allow microphone & enable voice.
+Chrome shows the microphone indicator/MIC badge during continuous capture. Set Site
+access to the websites you want or On all sites. The customizable home page is an
+optional Settings switch, OFF by default. Preview/customize without enabling it.
+No model/provider picker is exposed. Your key is local, not synced or encrypted.
+
+VOICE: A TEXT BOX NO LONGER FORCES DICTATION
+Hold LEFT mouse at least 450 ms, remain still for the final 250 ms, speak, release.
+The bounded PCM ring retains 2 seconds before press and a 250 ms release tail;
+short, silent or moving gestures leave ordinary clicks alone. Escape cancels.
+Audio ring allocation is fixed at 1,536,000 bytes, not total Chrome memory usage.
+
+- “Nova, find headphones on Amazon” is a task even if a text field is focused.
+- Obvious find/search/compare/browser/tool commands dispatch as tasks.
+- Ordinary prose uses a minimal-reasoning contextual interpretation call.
+- “Type exactly Nova, find headphones” inserts that literal text in the field.
+- Select text and say “Make the selected text more polite” to get replacement text,
+  rather than typing the spoken instruction. Whole-field replacement requires an
+  explicit request and a complete captured field.
+- At a cursor, generated text is inserted at the captured position. The model sees
+  field text, selection, start/end offsets and nearby text so it can handle spacing.
+
+Capture occurs synchronously at press-down. Field text sent as context is bounded
+at 6,000 characters, selected text at 2,000, nearby text at 1,500 on either side,
+with absolute cursor offsets and the text-window offset. Password, secret/card/code
+fields are excluded. Page/field content is untrusted data, never instructions.
+Tasks receive this context through the existing quoted-selection protocol, keeping
+the spoken request separate and wrapping the data with the native session boundary.
+If the field changed or disappeared while processing, insertion is refused and text
+is offered for review/copy. Output over the existing 800-character confirmation
+limit is also reviewed manually. Short selection edits in contenteditable use the
+captured Range. Plain selected page text within one text node can be replaced with
+an explicit Undo replacement button; more complex page selections get a preview
+for copy rather than destructive DOM restructuring. Page changes last until reload.
+
+TASKS AND RESULTS
+The agent chooses current-page or background placement from intent. Voice queries
+do not open the sidebar. Open controls explicitly from the toolbar/shortcut. The
+agent name is recognized per utterance and included in the agent's instructions.
+Optional completion popups focus result tabs; local Results & shortcuts remains
+available without notification permission. Writes/payments/account handovers retain
+the native enforcement. Chrome protected pages, Web Store and built-in PDF viewer
+cannot host capture scripts. The owned home page can delegate tasks safely.
+
+FLOWS AND FUNCTIONS
+Settings and Make & test tools in the panel show Saved flows & functions, their
+sites, whether automatic triggers are enabled, and typed inputs when present.
+The list refreshes when the agent saves new flows. Site workflows run only after
+explicit Save & enable trigger, on matching open/future pages and SPA navigation.
+Manual functions have no automatic trigger. Functions that navigate or require
+input cannot be installed as URL-triggered loops. Existing old presets are retained;
+delete an incorrectly scoped old tool and recreate it with Meta.
+
+Every Create action asks Meta to author the definition, including sites, selectors,
+steps, parameters and triggers; no preset tool/selector document is substituted.
+The current website is optional context. An explicitly named site cannot be silently
+retargeted to another site or a global/broad parent-domain scope.
+
+The agent has list_flows, create_flow and call_flow tools. It can author/save a
+function and call it within the same task. Agent calls support read-only browser
+functions; flows requiring manual review remain in the flow interface. New agent-
+authored definitions are saved with automatic triggers OFF. Page output is wrapped
+as untrusted data. Site block rules and declared host permissions remain enforced.
+Search functions use inactive tabs by default; the agent can request a matching
+current tab instead. Function result tabs join the task's result history.
+
+PRODUCT SEARCH EXAMPLE
+Click Product search function to ask Meta to build a read-only amazon.com function.
+Save it, then enter Input JSON and Call function, for example:
+  {"searchTerm":"headphones","filters":{"maxPrice":100,"minRating":4}}
+The model chooses its own URL template and extraction selectors. The runtime
+URL-encodes argument values, permits navigation only on declared/unblocked sites,
+reads bounded structured item/field lists and applies declared numeric/text filters.
+Output is a product-detail list with the fields the model declared. Change inputs
+and call again to test reuse. A second query opens another background tab by default.
+No checkout, cart writes or arbitrary generated JavaScript is exposed by this path.
+Filtering uses the displayed values/currency; it is not a currency conversion service.
+
+Parameters have declared scalar types, or an object with scalar properties such as
+filters. Missing required, unknown or wrong-typed inputs fail before opening a tab.
+Deterministic function replay uses ZERO internal model calls; voice transcription
+and the agent's reasoning/orchestration still use Meta when those surfaces are used.
+Direct Call function in the UI does not re-author the tool. Missing page receivers
+are injected into the top frame and retried once only before delivery. Site access
+failures give recovery instructions; action failures are not blindly replayed.
+No matches is reported as an empty result, not fabricated product data.
+
+FREQUENT TASK SUGGESTIONS
+Repeated successful Amazon searches can suggest a parameterized search function even
+when the search terms differ. Other repeated successful requests can suggest a
+reusable tool. Suggestions are local/bounded and make no model call until you click
+Create suggested function. The resulting Meta draft opens for review/save. Failures
+and secret-entry requests do not train suggestions. Existing keyboard tips and voice
+aliases remain available. Nothing is automatically enabled from a suggestion.
+
+TEST AFTER LOADING
+Settings → Test your agent (also inside Make & test tools in the panel):
+1. Test voice intent & editing runs actual decisions with your Meta key against
+   synthetic field/selection/cursor examples. It reports expected/actual actions;
+   it does not edit a real field. Includes task-in-field, named address, rewrite and
+   cursor dictation cases.
+2. Ask agent to create search function launches a real agent task using create_flow.
+   Wait for completion and inspect the saved function/inputs.
+3. Ask agent to use search function launches list_flows/call_flow with a search term
+   and filters. Check the actual returned list. If no function exists, it must say
+   so rather than invent results. Live browsing needs Chrome site access/login as
+   appropriate. A site challenge remains your step.
+Also try naming the agent, a task with the caret in a field, a selected-text rewrite,
+mid-sentence dictation, and two different function input/filter combinations.
+
+PRIVACY
+Idle audio is never uploaded or saved to disk; accepted clips go to Meta. Contextual
+interpretation sends bounded field/selection/cursor data. Task context and function
+outputs can be sent through the agent conversation and retained locally as quotes/
+tool results. Function definitions, observed price history, identity, shortcuts and
+flow metadata stay local. Local workflow run logs retain status/usage, not query text.
+No analytics, tracking, upstream feedback forms, promotional endpoint or app backend.
+Required licenses and credits are retained. Pause microphone stops continuous capture.
+
+VERIFIED / LIMITS
+854 native unit tests passed, four upstream skips; types, lint and build passed.
+Five Chromium browser fixtures passed. New checks include agent-name persistence,
+loaded test controls, task dispatch without insertion, cursor offsets/insertion,
+selected page-text replacement/undo, protected-field exclusion, model-generated
+functions with nested inputs, real fixture DOM extraction/filtering, two search terms
+with no re-authoring, trigger display/replay, and unchanged voice capture/completions.
+A real AgentLoop regression authors, saves, lists and calls the same function twice
+with different terms/filters and receives the returned structured results.
+Models and Chrome transports are mocked; page/UI/audio code executes in Chromium.
+Managed cloud Chromium blocks unpacked installation and cloud egress blocks Meta.
+Actual installed-extension/live Meta/live Amazon selector accuracy requires user
+Chrome. Model-authored selectors can need revision as websites change. No live
+end-to-end success or universal Google Docs/canvas editor support is claimed.

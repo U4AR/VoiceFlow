@@ -1,0 +1,56 @@
+{
+ "id": "youtube-search",
+ "name": "Search YouTube",
+ "description": "Search YouTube and return the videos on the first results page: title, channel, link and views/age.",
+ "sites": [
+  "youtube.com"
+ ],
+ "tags": [
+  "youtube",
+  "videos",
+  "search"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to search for"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.youtube.com/results?search_query={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "ytd-video-renderer, ytd-item-section-renderer yt-lockup-view-model",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "videos",
+   "items": "ytd-video-renderer, ytd-item-section-renderer yt-lockup-view-model",
+   "limit": 20,
+   "fields": {
+    "title": "#video-title, h3",
+    "channel": "ytd-channel-name a, a[href^=\"/@\"]",
+    "link": {
+     "sel": "a#video-title, a[href*=\"/watch\"]",
+     "attr": "url"
+    },
+    "meta": "#metadata-line, yt-content-metadata-view-model"
+   }
+  },
+  {
+   "do": "filter",
+   "in": "{{videos}}",
+   "field": "title",
+   "op": "exists",
+   "as": "videos"
+  }
+ ],
+ "output": "{{videos}}",
+ "notes": "YouTube mixes two result layouts (ytd-video-renderer and yt-lockup-view-model); both are covered."
+}

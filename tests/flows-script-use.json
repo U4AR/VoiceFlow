@@ -1,0 +1,5 @@
+[
+ {"tool":"find_flows","args":{"query":"gmail search hackathon credits mail","site":"mail.google.com"}},
+ {"tool":"run_flow","args":{"id":"gmail-search","input":{"query":"hackathon"}}},
+ {"text":"Two mails about the hackathon credits: Fireworks says your $50 credits are live, and Meta received your application."}
+]

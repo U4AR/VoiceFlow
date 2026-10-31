@@ -1,0 +1,94 @@
+{
+ "id": "gmail-read-mails",
+ "name": "Read Gmail mails",
+ "description": "Search Gmail and open the first few matching mails to read their full text. Returns subject, sender, date and body for each.",
+ "sites": [
+  "mail.google.com"
+ ],
+ "tags": [
+  "gmail",
+  "email",
+  "read",
+  "body"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "Gmail search"
+  },
+  "account": {
+   "type": "number",
+   "default": 0,
+   "description": "signed-in account number"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://mail.google.com/mail/u/{{account}}/#search/{{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "tr.zA",
+   "timeout": 12000
+  },
+  {
+   "do": "extract",
+   "as": "mails",
+   "items": "tr.zA",
+   "limit": 5,
+   "fields": {
+    "subject": "span.bog",
+    "from": {
+     "sel": "span[email]",
+     "attr": "name"
+    },
+    "email": {
+     "sel": "span[email]",
+     "attr": "email"
+    },
+    "date": {
+     "sel": "td.xW span[title]",
+     "attr": "title"
+    }
+   }
+  },
+  {
+   "do": "each",
+   "in": "{{mails}}",
+   "item": "m",
+   "limit": 5,
+   "as": "read",
+   "steps": [
+    {
+     "do": "click",
+     "sel": "tr.zA",
+     "nth": "{{index}}"
+    },
+    {
+     "do": "wait",
+     "for": "div.a3s",
+     "timeout": 10000
+    },
+    {
+     "do": "read",
+     "sel": "div.a3s",
+     "max": 4000,
+     "as": "m.body"
+    },
+    {
+     "do": "back"
+    },
+    {
+     "do": "wait",
+     "for": "tr.zA",
+     "timeout": 10000
+    }
+   ]
+  }
+ ],
+ "output": "{{read}}",
+ "notes": "Opens each mail in a background tab (marks it as read in Gmail)."
+}

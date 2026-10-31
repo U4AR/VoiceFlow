@@ -1,0 +1,61 @@
+{
+ "id": "amazon-best-pick",
+ "name": "Best Amazon pick",
+ "description": "Search Amazon.in (optionally under a price) and have a fast model pick the best value product, with a one-line reason and the other options.",
+ "sites": [
+  "amazon.in"
+ ],
+ "tags": [
+  "amazon",
+  "shopping",
+  "recommend",
+  "best"
+ ],
+ "model": "fast",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to buy"
+  },
+  "maxPrice": {
+   "type": "number",
+   "description": "budget in rupees"
+  }
+ },
+ "steps": [
+  {
+   "do": "flow",
+   "id": "amazon-search",
+   "input": {
+    "query": "{{query}}",
+    "maxPrice": "{{maxPrice}}",
+    "minRating": 3.5
+   },
+   "as": "products"
+  },
+  {
+   "do": "sort",
+   "in": "{{products}}",
+   "by": "price",
+   "as": "products"
+  },
+  {
+   "do": "ai",
+   "model": "fast",
+   "prompt": "Pick the best value product for someone shopping for: {{query}}. Weigh rating against price.",
+   "input": "{{products}}",
+   "json": {
+    "title": "...",
+    "price": "...",
+    "link": "...",
+    "why": "one sentence"
+   },
+   "as": "pick"
+  }
+ ],
+ "output": {
+  "pick": "{{pick}}",
+  "options": "{{products}}"
+ }
+}

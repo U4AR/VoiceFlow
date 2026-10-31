@@ -1,0 +1,92 @@
+[
+ {
+  "text": "pad"
+ },
+ {
+  "text": "pad"
+ },
+ {
+  "text": "pad"
+ },
+ {
+  "tool": "navigate",
+  "args": {
+   "url": "https://www.amazon.in/s?k=headphones",
+   "intent": "Open Amazon search"
+  }
+ },
+ {
+  "tool": "inspect_page",
+  "args": {
+   "sample": "Sony WH-CH520"
+  }
+ },
+ {
+  "tool": "inspect_page",
+  "args": {
+   "sample": "Sony WH-CH520"
+  }
+ },
+ {
+  "tool": "save_flow",
+  "args": {
+   "flow": {
+    "id": "amazon-headphones",
+    "name": "Amazon search (made by the agent)",
+    "description": "Search Amazon.in and return product titles, prices and links from the first results page.",
+    "sites": [
+     "amazon.in"
+    ],
+    "inputs": {
+     "query": {
+      "type": "string",
+      "required": true,
+      "description": "what to search"
+     }
+    },
+    "steps": [
+     {
+      "do": "open",
+      "url": "https://www.amazon.in/s?k={{query}}"
+     },
+     {
+      "do": "wait",
+      "for": "div.s-result-item"
+     },
+     {
+      "do": "extract",
+      "as": "items",
+      "items": "div.s-result-item",
+      "fields": {
+       "title": "h2 span",
+       "price": "span.a-offscreen",
+       "link": {
+        "sel": "a",
+        "attr": "href"
+       }
+      }
+     }
+    ],
+    "output": "{{items}}"
+   },
+   "test_input": {
+    "query": "headphones"
+   }
+  }
+ },
+ {
+  "tool": "share_flow",
+  "args": {
+   "id": "amazon-headphones"
+  }
+ },
+ {
+  "tool": "share_flow",
+  "args": {
+   "id": "amazon-headphones"
+  }
+ },
+ {
+  "text": "Saved the flow amazon-headphones and shared it."
+ }
+]

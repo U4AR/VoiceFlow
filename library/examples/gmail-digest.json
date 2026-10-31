@@ -1,0 +1,42 @@
+{
+ "id": "gmail-digest",
+ "name": "Gmail digest",
+ "description": "Read the mails matching a Gmail search and summarise them in a few bullet points (who wrote, what they want, dates and amounts). Uses gmail-read-mails, then a fast model.",
+ "sites": [
+  "mail.google.com"
+ ],
+ "tags": [
+  "gmail",
+  "summary",
+  "digest"
+ ],
+ "model": "fast",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "Gmail search"
+  }
+ },
+ "steps": [
+  {
+   "do": "flow",
+   "id": "gmail-read-mails",
+   "input": {
+    "query": "{{query}}"
+   },
+   "as": "mails"
+  },
+  {
+   "do": "ai",
+   "model": "fast",
+   "prompt": "Summarise these e-mails for the user in 3 to 6 short bullet points: who wrote, what they want or say, and any dates, deadlines or amounts. Plain text.",
+   "input": "{{mails}}",
+   "as": "summary"
+  }
+ ],
+ "output": {
+  "summary": "{{summary}}",
+  "mails": "{{mails}}"
+ }
+}
