@@ -394,3 +394,64 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area === 'local' && (ch['va.mcp.state'] || ch['va.mcp.log'] || ch['va.mcp.enabled'])) renderMcp();
 });
 renderMcp();
+
+// ---------- Suggested flows, views, memory ----------
+async function renderMore() {
+  const r = await chrome.storage.local.get(['va.patterns', 'va.views', 'va.memory', 'va.memory.mode']);
+  const pats = Object.values(r['va.patterns'] || {}).filter((p) => p.suggest).sort((a, b) => b.count - a.count);
+  const pb = $('patterns');
+  pb.textContent = '';
+  if (!pats.length) pb.append(ui.el('p', 'empty', 'Nothing yet. When you do the same kind of task a few times, it shows up here so the agent can make it a one-step flow.'));
+  for (const p of pats) {
+    const d = ui.el('div', 'flow');
+    d.append(ui.el('strong', '', p.name), ui.el('div', 'meta', 'You did this ' + p.count + ' times' + (p.sites && p.sites.length ? ' on ' + p.sites.join(', ') : '') + '. For example: “' + (p.examples[0] || '') + '”'));
+    const acts = ui.el('div', 'acts');
+    acts.append(
+      ui.button('Make it a flow', 'primary', async (b) => {
+        b.disabled = true;
+        b.textContent = 'Asking the agent…';
+        const res = await ui.send({ type: 'va.patternFlow', kind: p.kind });
+        b.textContent = res && res.ok ? 'The agent is making it (see Running now)' : 'Could not start: ' + ((res && res.error) || 'no answer');
+      }),
+      ui.button('Not now', 'ghost', () => ui.send({ type: 'va.patternDismiss', kind: p.kind })),
+    );
+    d.append(acts);
+    pb.append(d);
+  }
+  const views = Object.values(r['va.views'] || {}).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const vb = $('views');
+  vb.textContent = '';
+  if (!views.length) vb.append(ui.el('p', 'empty', 'No views yet.'));
+  for (const v of views) {
+    const d = ui.el('div', 'memrow');
+    const a = ui.el('a', 'link', v.title);
+    a.href = chrome.runtime.getURL('view.html?id=' + v.id);
+    a.target = '_blank';
+    const what = v.sections.map((s) => (s.source && s.source.flow ? s.source.flow : 'saved data') + ' as ' + (s.layout && s.layout.kind)).join(', ');
+    d.append(a, ui.el('span', 'meta', what), ui.button('Delete', 'ghost', () => ui.send({ type: 'va.viewDelete', id: v.id })));
+    vb.append(d);
+  }
+  if (document.activeElement !== $('memMode')) $('memMode').value = r['va.memory.mode'] || 'ask';
+  const mb = $('memList');
+  mb.textContent = '';
+  const mem = Array.isArray(r['va.memory']) ? r['va.memory'] : [];
+  if (!mem.length) mb.append(ui.el('p', 'empty', 'Nothing remembered yet.'));
+  for (const m of mem) {
+    const d = ui.el('div', 'memrow');
+    d.append(ui.el('span', '', m.fact), ui.el('span', 'meta', m.from === 'you' ? 'added by you' : new Date(m.at).toLocaleDateString()), ui.button('Forget', 'ghost', () => ui.send({ type: 'va.memoryDelete', id: m.id })));
+    mb.append(d);
+  }
+}
+$('memMode').onchange = (e) => chrome.storage.local.set({ 'va.memory.mode': e.target.value });
+$('memAdd').onsubmit = async (e) => {
+  e.preventDefault();
+  const v = $('memFact').value.trim();
+  if (!v) return;
+  const r = await ui.send({ type: 'va.memoryAdd', fact: v });
+  $('memFact').value = '';
+  if (r && r.saved === false) $('memFact').placeholder = r.reason || 'Not saved';
+};
+chrome.storage.onChanged.addListener((ch, area) => {
+  if (area === 'local' && (ch['va.patterns'] || ch['va.views'] || ch['va.memory'] || ch['va.memory.mode'])) renderMore();
+});
+renderMore();

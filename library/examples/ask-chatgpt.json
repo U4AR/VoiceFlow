@@ -1,0 +1,100 @@
+{
+ "id": "ask-chatgpt",
+ "name": "Ask ChatGPT",
+ "description": "Ask ChatGPT a question in the user's browser (normal chat, not Codex), wait for the whole answer and return it with the chat's link. Alerts the user when the answer arrives.",
+ "sites": [
+  "chatgpt.com"
+ ],
+ "tags": [
+  "chatgpt",
+  "openai",
+  "ask",
+  "ai",
+  "chat",
+  "question"
+ ],
+ "model": "none",
+ "inputs": {
+  "question": {
+   "type": "string",
+   "required": true,
+   "description": "what to ask"
+  },
+  "alert": {
+   "type": "boolean",
+   "default": true,
+   "description": "show an alert when the answer arrives"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://chatgpt.com/"
+  },
+  {
+   "do": "extract",
+   "sel": ":root",
+   "attr": "location",
+   "as": "start"
+  },
+  {
+   "do": "assert",
+   "that": "{{start}}",
+   "op": "not",
+   "value": "/codex",
+   "message": "ChatGPT opened in Codex mode, not the normal chat"
+  },
+  {
+   "do": "wait",
+   "for": "#prompt-textarea, textarea[name=\"prompt\"]",
+   "timeout": 20000
+  },
+  {
+   "do": "type",
+   "sel": "#prompt-textarea, textarea[name=\"prompt\"]",
+   "text": "{{question}}",
+   "enter": true
+  },
+  {
+   "do": "wait",
+   "for": "[data-message-author-role=\"assistant\"], li[data-message-role=\"assistant\"]",
+   "timeout": 60000
+  },
+  {
+   "do": "wait",
+   "for": "[data-testid=\"stop-button\"], button[aria-label*=\"Stop\"]",
+   "gone": true,
+   "timeout": 180000
+  },
+  {
+   "do": "wait",
+   "for": "[data-message-author-role=\"assistant\"] .markdown, li[data-message-role=\"assistant\"] [data-assistant-markdown]",
+   "stable": 1500,
+   "last": true,
+   "timeout": 60000
+  },
+  {
+   "do": "extract",
+   "sel": "[data-message-author-role=\"assistant\"] .markdown, li[data-message-role=\"assistant\"] [data-assistant-markdown]",
+   "last": true,
+   "as": "answer"
+  },
+  {
+   "do": "extract",
+   "sel": ":root",
+   "attr": "location",
+   "as": "link"
+  },
+  {
+   "do": "notify",
+   "if": "{{alert}}",
+   "title": "ChatGPT answered",
+   "message": "{{answer}}"
+  }
+ ],
+ "output": {
+  "answer": "{{answer}}",
+  "link": "{{link}}"
+ },
+ "notes": "Checked on chatgpt.com (Nov 2026, signed out; works signed in too): the box is #prompt-textarea (wide window) or textarea[name=prompt] (narrow). Enter sends. Run with keepOpen true to leave the chat open."
+}

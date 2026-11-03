@@ -30,6 +30,10 @@
   root.innerHTML = `<style>
     :host { all: initial; }
     [hidden] { display: none !important; }
+    .toast { position: fixed; right: 18px; top: 18px; width: min(360px, calc(100vw - 36px)); background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+             border-radius: 12px; box-shadow: var(--shadow); padding: 10px 12px; display: grid; gap: 4px; pointer-events: auto; cursor: pointer; animation: vaToast .18s ease-out; }
+    .toast .tt { font-weight: 700; } .toast .tm { color: var(--muted); max-height: 9em; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+    @keyframes vaToast { from { transform: translateY(8px); opacity: 0 } }
     * { box-sizing: border-box; }
     .ui { --bg: #ffffff; --bg2: #f3f5f4; --bg3: #e7ecea; --ink: #17222a; --muted: #5b6a71; --faint: #8d999e; --line: #e2e7e5;
           --accent: #0f7b6c; --accent-ink: #fff; --me: #0f7b6c; --me-ink: #fff; --warn: #b4472f; --ask: #fff6e3; --ask-line: #e8b25a;
@@ -186,6 +190,16 @@
   const fab = $('.fab');
   const panel = $('.panel');
   const uiRoot = $('.ui');
+  // An alert from a flow that finished waiting (e.g. ChatGPT answered), when system notifications are not allowed.
+  chrome.runtime.onMessage.addListener((m) => {
+    if (!m || m.type !== 'va.toast') return;
+    const t = el('div', 'toast');
+    t.setAttribute('role', 'status');
+    t.append(el('div', 'tt', String(m.title || 'Done').slice(0, 120)), el('div', 'tm', String(m.message || '').slice(0, 600)));
+    t.onclick = () => t.remove();
+    uiRoot.append(t);
+    setTimeout(() => t.remove(), 20000);
+  });
 
   // ---------- State ----------
   let acts = [];

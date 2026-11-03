@@ -90,6 +90,7 @@
   const asks = new Map(); // conversation -> [prompt]
   const waiting = new Map(); // prompt id -> resolve
   globalThis.__vaFlowAsks = (conversationId) => asks.get(conversationId) || [];
+  globalThis.__vaAskUser = (conversationId, data, ms) => askUser(conversationId, data, ms);
   function askUser(conversationId, data, ms = 5 * 60 * 1000) {
     const id = 'flow-' + Math.random().toString(36).slice(2, 10);
     const p = { id, kind: 'flow-ask', openedAt: new Date().toISOString(), data };
@@ -187,6 +188,16 @@
         } catch {
           throw new Error('the model did not return JSON');
         }
+      },
+      // An alert when a flow has its result (e.g. an answer arrived): a system notification when the user allowed
+      // them, otherwise a note on the page they are looking at.
+      async notify({ title, message }) {
+        console.info('[va] flow alert:', clip(title, 80));
+        const can = await chrome.permissions.contains({ permissions: ['notifications'] }).catch(() => false);
+        if (can && chrome.notifications)
+          return chrome.notifications.create('va-flow-' + Date.now(), { type: 'basic', iconUrl: chrome.runtime.getURL('icon-128.png'), title, message: clip(message, 400), priority: 2 });
+        const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (t) await chrome.tabs.sendMessage(t.id, { type: 'va.toast', title, message: clip(message, 600) }).catch(() => {});
       },
       async getFlow(id) {
         const f = await flowById(id);

@@ -1,0 +1,87 @@
+{
+ "id": "ask-claude",
+ "name": "Ask Claude",
+ "description": "Ask Claude (claude.ai) a question in the user's browser, wait for the whole answer and return it with the chat's link. Alerts the user when the answer arrives. Needs the user signed in to claude.ai.",
+ "sites": [
+  "claude.ai"
+ ],
+ "tags": [
+  "claude",
+  "anthropic",
+  "ask",
+  "ai",
+  "chat",
+  "question"
+ ],
+ "model": "none",
+ "inputs": {
+  "question": {
+   "type": "string",
+   "required": true,
+   "description": "what to ask"
+  },
+  "alert": {
+   "type": "boolean",
+   "default": true,
+   "description": "show an alert when the answer arrives"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://claude.ai/new"
+  },
+  {
+   "do": "wait",
+   "for": "[data-testid=\"chat-input\"], div.ProseMirror[contenteditable=\"true\"]",
+   "timeout": 25000
+  },
+  {
+   "do": "type",
+   "sel": "[data-testid=\"chat-input\"], div.ProseMirror[contenteditable=\"true\"]",
+   "text": "{{question}}",
+   "enter": true
+  },
+  {
+   "do": "wait",
+   "for": "[data-is-streaming]",
+   "timeout": 60000
+  },
+  {
+   "do": "wait",
+   "for": "[data-is-streaming=\"true\"]",
+   "gone": true,
+   "timeout": 180000
+  },
+  {
+   "do": "wait",
+   "for": "[data-is-streaming=\"false\"] .standard-markdown",
+   "stable": 1200,
+   "last": true,
+   "timeout": 30000
+  },
+  {
+   "do": "extract",
+   "sel": "[data-is-streaming=\"false\"] .standard-markdown",
+   "last": true,
+   "as": "answer"
+  },
+  {
+   "do": "extract",
+   "sel": ":root",
+   "attr": "location",
+   "as": "link"
+  },
+  {
+   "do": "notify",
+   "if": "{{alert}}",
+   "title": "Claude answered",
+   "message": "{{answer}}"
+  }
+ ],
+ "output": {
+  "answer": "{{answer}}",
+  "link": "{{link}}"
+ },
+ "notes": "Checked on claude.ai (Nov 2026): the box is [data-testid=chat-input] (ProseMirror), Enter sends; a reply is [data-is-streaming] and becomes \"false\" when done. If not signed in, the box never appears."
+}

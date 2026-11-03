@@ -55,6 +55,7 @@
   .chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
   .chip.ok { color: #1f8f4e; } .chip.bad { color: var(--warn); }
   #mcpLog td { white-space: nowrap; font-size: 13px; } #mcpLog td:last-child { white-space: normal; color: var(--muted); }
+  .memrow { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--rule); } .memrow span { flex:1; } .memrow .meta { flex:none; }
   .prices { display: grid; grid-template-columns: auto repeat(3, auto); gap: 6px 10px; align-items: center; margin-top: 10px; font-size: 14px; }
 </style></head>
 <body><main>
@@ -72,6 +73,20 @@
       <div class="prices" id="prices"></div>
       <div class="row" style="margin-top:10px"><button id="savePrices">Save prices</button><button id="resetPrices">Use Meta's list prices</button><button id="resetCost" class="stop">Start counting again from zero</button></div>
     </details>
+  </div>
+  <h2>Suggested flows</h2>
+  <div id="patterns"></div>
+  <h2>Views</h2>
+  <p class="sub" style="margin-bottom:10px">Pages the agent made to show results (ask it, for example, “show my YouTube feed as cards”). Views that come from a flow refresh each time you open them.</p>
+  <div id="views"></div>
+  <h2>Memory</h2>
+  <div class="card" style="display:grid;gap:10px">
+    <label class="row"><span><strong>Remember facts about me</strong></span>
+      <select id="memMode" style="font:inherit;padding:6px 8px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);color:var(--ink)">
+        <option value="ask">Ask me first</option><option value="auto">Automatically</option><option value="off">Off</option></select></label>
+    <p class="meta" style="margin:0">The agent saves short facts you tell it or that a task shows (your city, which shops you use…) and uses them in later tasks instead of asking again. Passwords, codes and card or ID numbers are never saved.</p>
+    <form id="memAdd" class="row" style="flex-wrap:nowrap"><input type="text" id="memFact" placeholder="Add something it should know, e.g. I live in Thrissur" maxlength="200"><button>Add</button></form>
+    <div id="memList"></div>
   </div>
   <h2>Flows</h2>
   <p class="sub" style="margin-bottom:10px">Saved, tested functions your agent runs in one step (for example “read my Gmail results”). The agent writes them when you ask (or after “Automate it”); flows from the online library are used only after you approve them.</p>

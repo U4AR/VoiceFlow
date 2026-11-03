@@ -258,6 +258,8 @@
     recall: 'Looking at your earlier tasks',
     look_back: 'Looking back at an earlier page',
     load_tools: 'Getting another tool ready',
+    remember: 'Remembering something about you',
+    show_view: 'Making a page to show the results',
   };
   const tidy = (s, n) => clip(String(s || '').replace(/\s+/g, ' ').trim(), n);
   function describe(tool, a) {
@@ -379,7 +381,8 @@
   });
   globalThis.__vaFirstSnapChars = 12000;
 
-  const DEFERRED = new Set(['screenshot', 'fill_form', 'wait', 'hover', 'type', 'upload', 'handle_dialog', 'read_attachment', 'save_file', 'inspect_page', 'save_flow', 'share_flow']);
+  // type and wait stay loaded: quick actions (ask a chat site, search a form) need them, and loading costs a model call.
+  const DEFERRED = new Set(['screenshot', 'fill_form', 'hover', 'upload', 'handle_dialog', 'read_attachment', 'save_file', 'inspect_page', 'save_flow', 'share_flow', 'show_view']);
   // The build's own flow tools (create_flow asked a second model to guess a site's selectors without seeing the page,
   // and usually saved nothing) are replaced by find_flows / run_flow / inspect_page / save_flow / share_flow.
   const RETIRED = new Set(['list_flows', 'create_flow', 'call_flow']);
@@ -396,7 +399,8 @@
   };
   globalThis.__vaToolFilter = (conversationId, tools) => {
     const mine = loaded.get(conversationId);
-    const keep = (flags.allTools ? tools : tools.filter((t) => !DEFERRED.has(t.name) || (mine && mine.has(t.name)))).filter((t) => !RETIRED.has(t.name));
+    const memOff = globalThis.__vaMemoryContext && !globalThis.__vaMemoryContext();
+    const keep = (flags.allTools ? tools : tools.filter((t) => !DEFERRED.has(t.name) || (mine && mine.has(t.name)))).filter((t) => !RETIRED.has(t.name) && !(memOff && t.name === 'remember'));
     return keep.map((t) => (t.name === 'load_tools' && flags.allTools ? null : { ...t, parameters: compact(t.parameters) })).filter(Boolean);
   };
   // The model called a tool it has not loaded: load it so its next call works.
@@ -462,7 +466,7 @@
   // The agent gets three tools (declared next to its other tools further down this file): open_tabs, use_tab and
   // recall. And every run's instructions carry a short note of the user's current tab and their recent tasks, so a
   // new request such as "did we finish?" is understood.
-  globalThis.__vaTools = new Set(['open_tabs', 'use_tab', 'recall', 'look_back', 'load_tools', 'find_flows', 'run_flow', 'inspect_page', 'save_flow', 'share_flow']);
+  globalThis.__vaTools = new Set(['open_tabs', 'use_tab', 'recall', 'look_back', 'load_tools', 'find_flows', 'run_flow', 'inspect_page', 'save_flow', 'share_flow', 'remember', 'show_view']);
   const hhmm = (iso) => {
     try {
       return new Date(iso).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
@@ -546,6 +550,10 @@
   globalThis.__vaAgentTool = async (conversationId, call, signal) => {
     const a = (call && call.input) || {};
     const name = call && call.toolName;
+    if (globalThis.__vaMoreTools && globalThis.__vaMoreTools.names.includes(name)) {
+      console.info('[va] tool', name, clip(a.fact || a.title || '', 60));
+      return globalThis.__vaMoreTools.run(conversationId, name, a);
+    }
     if (globalThis.__vaFlowTools && globalThis.__vaFlowTools.names.includes(name)) {
       console.info('[va] tool', name, a.id || clip(a.query || a.sample || '', 60) || (a.flow && a.flow.id) || '');
       return globalThis.__vaFlowTools.run(conversationId, name, a, signal);
@@ -675,6 +683,7 @@
       (lines.length ? "The user's recent tasks with you (newest first; recall gives details or a whole conversation):\n" + lines.join('\n') + '\n' : '') +
       'If the user refers to earlier work, continue from it instead of starting over.\n' +
       (globalThis.__vaFlowsContext?.() || '') +
+      (globalThis.__vaMemoryContext?.() || '') +
       (flags.fullHistory ? '' : 'Older page observations in this task are shortened to save cost (look_back reopens them). As you go, write a one-line note of what you found and what is left, so nothing is lost.\n') +
       '</voice-agent-context>'
     );
@@ -711,8 +720,10 @@
   // and the popup offers "Automate it" when it is yes. Off with the Tasks page setting va.ui.suggestAutomate.
   async function judgeAutomation(conversationId) {
     try {
-      const r = await chrome.storage.local.get(['va.ui.suggestAutomate', 'va.taskEnds', 'voice.activity', 'voice.pending-tasks']);
-      if (r['va.ui.suggestAutomate'] === false) return;
+      const r = await chrome.storage.local.get(['va.ui.suggestAutomate', 'va.taskEnds', 'voice.activity', 'voice.pending-tasks', 'va.memory.mode']);
+      const suggest = r['va.ui.suggestAutomate'] !== false;
+      const memoryOn = r['va.memory.mode'] !== 'off';
+      if (!suggest && !memoryOn) return;
       const end = (r['va.taskEnds'] || {})[conversationId];
       const act = (Array.isArray(r['voice.activity']) ? r['voice.activity'] : []).find((a) => a.id === conversationId);
       if (!end || end.status !== 'done' || end.automate) return;
@@ -720,6 +731,12 @@
       if (!key) return;
       const steps = ((progress[conversationId] && progress[conversationId].steps) || []).map((s) => '- ' + s.label).slice(-30).join('\n');
       const request = tidy((r['voice.pending-tasks'] || {})[conversationId] || (act && act.text) || '', 500);
+      // What the user said in the task (facts about them usually come from here).
+      let said = '';
+      try {
+        said = (await transcript(conversationId, 6000)).items.filter((x) => x.role === 'user').slice(-3).map((x) => tidy(x.text, 400)).join(' | ').slice(0, 1500);
+      } catch {}
+      const kinds = (await globalThis.__vaKnownKinds?.()) || [];
       const res = await fetch('https://api.meta.ai/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
@@ -734,8 +751,8 @@
               strict: true,
               schema: {
                 type: 'object',
-                properties: { worth: { type: 'boolean' }, reason: { type: 'string' }, name: { type: 'string' } },
-                required: ['worth', 'reason', 'name'],
+                properties: { worth: { type: 'boolean' }, reason: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, facts: { type: 'array', items: { type: 'string' } } },
+                required: ['worth', 'reason', 'name', 'kind', 'facts'],
                 additionalProperties: false,
               },
             },
@@ -744,9 +761,9 @@
             {
               role: 'developer',
               content:
-                'Decide whether a browser task the user just finished with their agent is worth turning into a reusable automation: a saved workflow that can run again with new inputs, or on a schedule, without the agent working it out again. Yes when the user is likely to repeat the same kind of task (routine checks, recurring searches or comparisons, filling the same kind of form, monitoring a page) and the steps are stable. No for one-off questions, tasks that mostly needed judgment or conversation, or that depended on a one-time situation. reason: one short sentence for the user. name: a short title for the automation (3 to 6 words), or an empty string when worth is false. Return the JSON only.',
+                'Decide whether a browser task the user just finished with their agent is worth turning into a reusable automation: a saved workflow that can run again with new inputs, or on a schedule, without the agent working it out again. Yes when the user is likely to repeat the same kind of task (routine checks, recurring searches or comparisons, filling the same kind of form, monitoring a page) and the steps are stable. No for one-off questions, tasks that mostly needed judgment or conversation, or that depended on a one-time situation. reason: one short sentence for the user. name: a short title for the automation (3 to 6 words), or an empty string when worth is false. kind: a short lowercase id for this kind of task, the same for every task of the same kind whatever its details (e.g. ask-chatgpt, youtube-feed-check, gmail-search-credits); reuse one of the known kinds when it fits. facts: lasting facts about the user that the user stated or that the task clearly showed (their name, city, people, preferences, which shops or accounts they use), each one short sentence; never passwords, codes, card, ID or account numbers; [] if none. Return the JSON only.',
             },
-            { role: 'user', content: 'Task: ' + request + '\nSteps taken:\n' + (steps || '(none recorded)') + '\nResult: ' + clip(end.summary, 800) },
+            { role: 'user', content: 'Task: ' + request + '\nWhat the user said: ' + (said || request) + '\nSteps taken:\n' + (steps || '(none recorded)') + '\nResult: ' + clip(end.summary, 800) + '\nKnown kinds: ' + (kinds.join(', ') || '(none yet)') },
           ],
         }),
       });
@@ -754,7 +771,19 @@
       const j = await res.json();
       const v = JSON.parse(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
       if (typeof v.worth !== 'boolean') return;
-      const automate = { worth: v.worth, reason: tidy(v.reason, 200), name: tidy(v.name, 60) };
+      if (memoryOn && Array.isArray(v.facts) && v.facts.length) globalThis.__vaMemoryOffer?.(conversationId, v.facts, 'task');
+      const tabId = progress[conversationId] && progress[conversationId].tab;
+      const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
+      const site = (() => {
+        try {
+          return new URL((tab && tab.url) || '').hostname.replace(/^www\./, '');
+        } catch {
+          return '';
+        }
+      })();
+      const pattern = v.kind ? await globalThis.__vaPatternSeen?.(conversationId, v.kind, v.name, request, site, v.worth) : null;
+      if (!suggest) return;
+      const automate = { worth: v.worth || !!(pattern && pattern.suggest), reason: tidy(pattern && pattern.suggest ? 'You have done this ' + pattern.count + ' times. ' + v.reason : v.reason, 200), name: tidy(v.name || (pattern && pattern.name), 60), kind: pattern && pattern.kind, times: pattern && pattern.count };
       endsWrite = endsWrite.then(async () => {
         const rr = await chrome.storage.local.get('va.taskEnds');
         const all = rr['va.taskEnds'] || {};

@@ -5,12 +5,12 @@
 import https from 'node:https';
 import { readFileSync } from 'node:fs';
 const MAILS = [
-  { id: 'm1', from: 'Fireworks AI', email: 'credits@fireworks.ai', subject: 'Your $50 hackathon credits are live', snippet: 'Hi there, the credits for the Meta hackathon have been added to your account', body: 'Hi there,\nThe $50 in credits for the Meta Llama hackathon are now on your Fireworks account. They expire on 30 November.\nThe Fireworks team', date: 'Thu, Oct 29, 2026, 4:12 PM' },
+  { id: 'm1', from: 'Fireworks AI', email: 'credits@fireworks.ai', subject: 'Your $50 hackathon credits are live', snippet: 'Hi Ashish, the credits for the Meta hackathon have been added to your account', body: 'Hi Ashish,\nThe $50 in credits for the Meta Llama hackathon are now on your Fireworks account. They expire on 30 November.\nThe Fireworks team', date: 'Thu, Oct 29, 2026, 4:12 PM' },
   { id: 'm2', from: 'Meta for Developers', email: 'noreply@meta.com', subject: 'Hackathon: API credits application received', snippet: 'We received your application for Muse API credits. We will reply within 3 days', body: 'Thanks for applying for Muse API credits for the hackathon. We review applications within 3 working days.', date: 'Wed, Oct 28, 2026, 9:03 AM' },
   { id: 'm3', from: 'Amazon.in', email: 'order-update@amazon.in', subject: 'Your order has shipped', snippet: 'Boat Rockerz 450 will arrive Saturday', body: 'Your package is on the way.', date: 'Tue, Oct 27, 2026, 7:40 PM' },
   { id: 'm4', from: 'Kaggle', email: 'no-reply@kaggle.com', subject: 'ARC Prize 2026: new leaderboard results', snippet: 'Your latest submission scored 0.31', body: 'Your submission scored 0.31 on the public leaderboard.', date: 'Mon, Oct 26, 2026, 11:00 AM' },
 ];
-const gmail = `<!doctype html><html><head><title>Inbox - you@example.com - Gmail</title><style>body{font:14px Arial} tr.zA{cursor:pointer} td{padding:4px 8px;border-bottom:1px solid #ddd} .a3s{white-space:pre-wrap;padding:12px}</style></head>
+const gmail = `<!doctype html><html><head><title>Inbox - test.user@example.com - Gmail</title><style>body{font:14px Arial} tr.zA{cursor:pointer} td{padding:4px 8px;border-bottom:1px solid #ddd} .a3s{white-space:pre-wrap;padding:12px}</style></head>
 <body><div role="main" id=":1"><div class="nH"><button class="T-I" aria-label="Delete" id="del">Delete</button><table class="F cf zt"><tbody id="rows"></tbody></table><div id="thread"></div></div></div>
 <script>
 const MAILS=${JSON.stringify(MAILS)};
@@ -48,6 +48,20 @@ const hn = `<!doctype html><title>Hacker News</title><table>` + [['Show HN: A fl
 const FK = [['boAt Airdopes 141 Bluetooth Headset', 1099, 4.1, 'boat-141'], ['Noise Buds VS104', 999, 4.0, 'noise-vs104'], ['JBL Tune 510BT Wireless On-Ear Headphones', 2799, 4.4, 'jbl-510bt'], ['realme Buds T300', 1999, 4.3, 'realme-t300']];
 const flipkart = (q) => `<!doctype html><title>Flipkart: ${q}</title><div class="grid">` + FK.map(([t,p,r,slug],i)=>`<div data-id="FK${i}"><div class="slAVV4"><a class="VJA3rP" href="/${slug}/p/itm${i}?pid=FK${i}&lid=x"><img class="DByuf4" alt="${t}" src="https://rukminim2.flixcart.com/${slug}.jpg"></a><a class="pIpigb" href="/${slug}/p/itm${i}">${t}</a><div class="_5OesEi"><div class="MKiFS6">${r}</div></div><div class="hZ3P6w">₹${p.toLocaleString('en-IN')}</div><div class="kRYCnD">₹${(p*2).toLocaleString('en-IN')}</div><span>Add to Compare</span></div></div>`).join('') + `<div data-id="AD1"><span>Sponsored banner</span></div></div>`;
 const ytResults = (q) => `<!doctype html><title>${q} - YouTube</title><ytd-app><ytd-search><ytd-item-section-renderer><div id="contents"></div></ytd-item-section-renderer></ytd-search></ytd-app><script>setTimeout(()=>{const c=document.getElementById('contents');c.insertAdjacentHTML('beforeend','<ytd-video-renderer><a id="video-title" href="/watch?v=yt1&pp=abc" title="Kerala backwaters in 4K"><yt-formatted-string>Kerala backwaters in 4K</yt-formatted-string></a><ytd-channel-name><a href="/@travel">Travel Lens</a></ytd-channel-name><div id="metadata-line"><span>1.2M views</span><span>1 year ago</span></div></ytd-video-renderer>');c.insertAdjacentHTML('beforeend','<yt-lockup-view-model><a href="/watch?v=yt2" class="thumb"></a><h3><a href="/watch?v=yt2">Houseboat day trip, Alleppey</a></h3><a href="/@kerala">Kerala Diaries</a><yt-content-metadata-view-model>300K views · 3 months ago</yt-content-metadata-view-model></yt-lockup-view-model>')},600)</script>`;
+
+const chatgpt = `<!doctype html><title>ChatGPT</title><main><div id="thread"></div><form id="f"><div id="prompt-textarea" contenteditable="true" class="ProseMirror"></div><button type="button" data-testid="send-button" aria-label="Send prompt">↑</button></form></main>
+<script>const box=document.getElementById('prompt-textarea'),th=document.getElementById('thread');
+box.addEventListener('keydown',e=>{if(e.key!=='Enter'||e.shiftKey)return;e.preventDefault();const q=box.innerText.trim();if(!q)return;box.textContent='';
+const u=document.createElement('div');u.dataset.messageAuthorRole='user';u.textContent=q;th.append(u);
+const stop=document.createElement('button');stop.dataset.testid='stop-button';stop.textContent='Stop';document.querySelector('form').append(stop);
+setTimeout(()=>{const a=document.createElement('div');a.dataset.messageAuthorRole='assistant';const md=document.createElement('div');md.className='markdown';a.append(md);th.append(a);
+const words=('ChatGPT here: the answer to "'+q+'" is 42.').split(' ');let i=0;const t=setInterval(()=>{md.textContent=words.slice(0,++i).join(' ');if(i>=words.length){clearInterval(t);stop.remove();history.replaceState(null,'','/c/abc123')}},150)},800)});</script>`;
+const claude = `<!doctype html><title>Claude</title><main><div id="thread"></div><fieldset><div data-testid="chat-input" class="tiptap ProseMirror" contenteditable="true" aria-label="Write your prompt to Claude"></div></fieldset></main>
+<script>const box=document.querySelector('[data-testid=chat-input]'),th=document.getElementById('thread');
+box.addEventListener('keydown',e=>{if(e.key!=='Enter'||e.shiftKey)return;e.preventDefault();const q=box.innerText.trim();if(!q)return;box.textContent='';history.pushState(null,'','/chat/xyz789');
+const u=document.createElement('div');u.className='user-msg';u.textContent=q;th.append(u);
+setTimeout(()=>{const a=document.createElement('div');a.dataset.isStreaming='true';const md=document.createElement('div');md.className='standard-markdown';a.append(md);th.append(a);
+const words=('Gold is about ₹7,900 per gram today (answer to: '+q+').').split(' ');let i=0;const t=setInterval(()=>{md.textContent=words.slice(0,++i).join(' ');if(i>=words.length){clearInterval(t);a.dataset.isStreaming='false'}},120)},600)});</script>`;
 https
   .createServer({ key: readFileSync('key.pem'), cert: readFileSync('cert.pem') }, (req, res) => {
     const host = String(req.headers.host || '').split(':')[0];
@@ -62,6 +76,8 @@ https
     else if (host === 'en.wikipedia.org' && u.pathname.startsWith('/wiki/')) html = wiki;
     else if (host === 'news.ycombinator.com' && u.pathname === '/') html = hn;
     else if (host === 'www.flipkart.com' && u.pathname === '/search') html = flipkart(u.searchParams.get('q') || '');
+    else if (host === 'chatgpt.com' && !u.pathname.startsWith('/codex')) html = chatgpt;
+    else if (host === 'claude.ai') html = claude;
     else if (host === 'www.youtube.com' && u.pathname === '/results') html = ytResults(u.searchParams.get('search_query') || '');
     if (!html) {
       res.writeHead(404, { 'content-type': 'text/plain' });

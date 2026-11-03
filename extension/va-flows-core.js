@@ -18,7 +18,7 @@
   const HOST = /^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/;
   const PAGE = ['open', 'wait', 'extract', 'read', 'click', 'type', 'press', 'scroll', 'back', 'sleep'];
   const DATA = ['set', 'filter', 'sort', 'take', 'format', 'map', 'concat', 'unique'];
-  const KINDS = new Set([...PAGE, ...DATA, 'ai', 'each', 'flow', 'return']);
+  const KINDS = new Set([...PAGE, ...DATA, 'ai', 'each', 'flow', 'return', 'notify', 'assert']);
   const ACTS = new Set(['click', 'type', 'press']);
   const MODELS = { fast: 'muse-spark-1.3', strong: 'muse-wonder-1.0' };
   const RISKY = /\b(buy|pay|payment|place (your )?order|check ?out|purchase|send|submit|delete|remove|discard|trash|post|publish|tweet|reply|transfer|confirm|subscribe|unsubscribe|follow|unfollow|sign ?out|log ?out|archive|report|block)\b/i;
@@ -128,7 +128,18 @@
         case 'wait':
           if (s.for === undefined && s.text === undefined) ctx.err(w, 'give "for" (a CSS selector) or "text" to wait for');
           if (s.for !== undefined && !sel(s.for)) ctx.err(w + '.for', 'a CSS selector');
-          if (s.timeout !== undefined && !(Number.isFinite(s.timeout) && s.timeout >= 100 && s.timeout <= 30000)) ctx.err(w + '.timeout', '100 to 30000 ms');
+          if (s.timeout !== undefined && !(Number.isFinite(s.timeout) && s.timeout >= 100 && s.timeout <= 180000)) ctx.err(w + '.timeout', '100 to 180000 ms');
+          if (s.gone !== undefined && typeof s.gone !== 'boolean') ctx.err(w + '.gone', 'true to wait until nothing matches "for" (e.g. a stop or loading button)');
+          if (s.stable !== undefined && !(Number.isFinite(s.stable) && s.stable >= 200 && s.stable <= 20000)) ctx.err(w + '.stable', 'ms the text of "for" must stay unchanged (200 to 20000), e.g. for a streaming answer');
+          break;
+        case 'assert':
+          need('that', (v) => typeof v === 'string', 'the value to check, e.g. "{{url}}"');
+          need('op', (v) => ['contains', 'equals', 'not', 'gt', 'lt', 'gte', 'lte', 'matches', 'exists'].includes(v), 'contains, equals, not, gt, lt, gte, lte, matches or exists');
+          need('message', (v) => str(v, 300), 'what went wrong if the check fails (shown to the agent)');
+          break;
+        case 'notify':
+          need('title', (v) => str(v, 120), 'a short title, e.g. "ChatGPT answered"');
+          if (s.message !== undefined && !str(s.message, 2000)) ctx.err(w + '.message', 'up to 2000 characters (templates allowed)');
           break;
         case 'extract':
           if (!s.as) ctx.err(w + '.as', 'name the result, e.g. "mails"');
@@ -298,6 +309,7 @@
       if (attr === 'href') return e.href || (e.closest('a') && e.closest('a').href) || e.getAttribute('href');
       if (attr === 'src') return e.currentSrc || e.src || e.getAttribute('src');
       if (attr === 'value') return e.value;
+      if (attr === 'location') return location.href;
       if (attr === 'url') {
         // A link without its tracking: the address the link leads to, minus ?query and #part (and unwrapped from
         // redirect links that carry it in a url= parameter).
@@ -323,6 +335,11 @@
       for (let i = 0; i < all.length && i < 300; i++) if (visible(all[i])) return all[i];
       return all[0] || null;
     };
+    const lastShown = (sel) => {
+      const all = [...document.querySelectorAll(sel)];
+      for (let i = all.length - 1; i >= 0; i--) if (visible(all[i])) return all[i];
+      return all[all.length - 1] || null;
+    };
     const byText = (text, sel) => {
       const want = clean(text).toLowerCase();
       const pool = [...document.querySelectorAll(sel || 'a,button,[role=button],[role=link],[role=tab],[role=option],[role=menuitem],input[type=submit],input[type=button],summary,label,li,td,span,div')];
@@ -340,7 +357,12 @@
       switch (step.do) {
         case 'wait': {
           if (step.for) {
-            const e = step.visible === false ? document.querySelector(step.for) : firstShown(step.for);
+            if (step.gone) {
+              const any = [...document.querySelectorAll(step.for)].some((x) => visible(x));
+              return { ok: !any };
+            }
+            const e = step.last ? lastShown(step.for) : step.visible === false ? document.querySelector(step.for) : firstShown(step.for);
+            if (step.stable) return { ok: !!e, value: e ? clean(e.innerText || e.textContent) : null };
             return { ok: !!e && (step.visible === false || visible(e)) };
           }
           return { ok: clean(document.body && document.body.innerText).toLowerCase().includes(clean(step.text).toLowerCase()) };
@@ -361,7 +383,7 @@
             return { ok: true, value: out, found: document.querySelectorAll(step.items).length };
           }
           if (step.all) return { ok: true, value: [...document.querySelectorAll(step.sel)].slice(0, step.limit || 50).map((e) => valueOf(e, step.attr)) };
-          const e = firstShown(step.sel);
+          const e = step.last ? lastShown(step.sel) : firstShown(step.sel);
           return { ok: true, value: valueOf(e, step.attr), found: e ? 1 : 0 };
         }
         case 'read': {
@@ -399,10 +421,10 @@
           }
           if (step.enter) {
             const o = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-            e.dispatchEvent(new KeyboardEvent('keydown', o));
+            const handled = !e.dispatchEvent(new KeyboardEvent('keydown', o));
             e.dispatchEvent(new KeyboardEvent('keypress', o));
             e.dispatchEvent(new KeyboardEvent('keyup', o));
-            if (e.form && !e.form.querySelector('input[type=password]')) {
+            if (!handled && e.form && !e.form.querySelector('input[type=password]')) {
               if (e.form.requestSubmit) e.form.requestSubmit();
               else e.form.submit();
             }
@@ -623,12 +645,30 @@
         }
         case 'wait': {
           const until = Date.now() + (s.timeout || 15000);
+          let last = null;
+          let since = Date.now();
           for (;;) {
             const r = await adapters.page(tab, { ...render(s, scope), __risky: RISKY.source });
-            if (r && r.ok) return undefined;
-            if (Date.now() > until) throw new Error('timed out waiting for ' + (s.for || '"' + s.text + '"'));
+            if (s.stable) {
+              // Settled: the text has not changed for "stable" ms (a streaming answer has finished).
+              const now = r && r.ok ? r.value : null;
+              if (now !== last) (last = now), (since = Date.now());
+              else if (now && Date.now() - since >= s.stable) return undefined;
+            } else if (r && r.ok) return undefined;
+            if (Date.now() > until) throw new Error('timed out waiting for ' + (s.gone ? s.for + ' to go away' : s.stable ? s.for + ' to settle' : s.for || '"' + s.text + '"'));
             await sleep(400, sig);
           }
+        }
+        case 'assert': {
+          const v = render(s.that, scope);
+          if (!compare(v, s.op, render(s.value, scope))) throw new Error(String(render(s.message, scope, 'text')));
+          return undefined;
+        }
+        case 'notify': {
+          const title = String(render(s.title, scope, 'text')).slice(0, 120);
+          const message = String(render(s.message || '', scope, 'text')).slice(0, 2000);
+          if (adapters.notify) await adapters.notify({ title, message }).catch(() => {});
+          return undefined;
         }
         case 'extract': {
           const until = Date.now() + (s.timeout || 0);
