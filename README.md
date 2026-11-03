@@ -66,6 +66,7 @@ Before this change the same "ask Claude" question took 13 calls and about 95 s.
   - Passwords, codes and card or ID numbers are never kept. Saved facts go into the agent's instructions.
 - **Views (`show_view`):** a page of cards, a table, a list, text, stats or a bar chart, fed by saved flows or by data from earlier steps. It refreshes each time it opens and is listed on the Tasks page.
 - **Suggested flows:** each finished task gets a kind (such as `ask-chatgpt`). Once the same worthwhile kind has come up twice and no saved flow covers it, the Tasks page offers **Make it a flow**.
+- **Starter flows:** `ask-chatgpt` and `ask-claude` come with the extension (added once; not re-added if deleted).
 - **New step kinds:**
   - `notify`: an alert when a flow finishes.
   - `assert`: stop with a message, for example when ChatGPT opens in Codex mode.

@@ -54,6 +54,8 @@ try:
         pg.fill('input[type=password]', KEY); pg.click('text=Connect securely'); pg.wait_for_timeout(4000)
     pg.close()
     sw.evaluate("chrome.storage.local.get('nb.settings').then(r=>chrome.storage.local.set({'nb.settings':{...r['nb.settings'],turnCap:80,defaultMode:'auto'}}))")
+    st = sw.evaluate("chrome.storage.local.get(['va.flows','va.starters']).then(r=>({flows:Object.keys(r['va.flows']||{}),starters:r['va.starters']||[]}))")
+    check('a new install already has the ask-chatgpt and ask-claude flows', {'ask-chatgpt','ask-claude'} <= set(st['flows']) and len(st['starters']) == 2, st)
     # flows used below (each is test-run on the replicas when saved)
     for fid, ti in [('youtube-feed', {}), ('amazon-search', {'query': 'headphones'}), ('flipkart-search', {'query': 'earbuds'}), ('price-compare', {'query': 'headphones', 'maxPrice': 3000}),
                     ('ask-claude', {'question': 'what is 3+4?', 'alert': False}), ('ask-chatgpt', {'question': 'what is 6x7?'})]:

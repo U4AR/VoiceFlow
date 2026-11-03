@@ -216,6 +216,26 @@
     return true;
   });
 
+  // ---------- Starter flows ----------
+  // Quick actions that come with the extension, so "ask ChatGPT ..." or "ask Claude ..." is one run_flow step from the
+  // first use. Each one is added once; if the user deletes it, it is not added again.
+  const STARTERS = {"ask-chatgpt":{"id":"ask-chatgpt","name":"Ask ChatGPT","description":"Ask ChatGPT a question in the user's browser (normal chat, not Codex), wait for the whole answer and return it with the chat's link. Alerts the user when the answer arrives.","sites":["chatgpt.com"],"tags":["chatgpt","openai","ask","ai","chat","question"],"model":"none","inputs":{"question":{"type":"string","required":true,"description":"what to ask"},"alert":{"type":"boolean","default":true,"description":"show an alert when the answer arrives"}},"steps":[{"do":"open","url":"https://chatgpt.com/"},{"do":"extract","sel":":root","attr":"location","as":"start"},{"do":"assert","that":"{{start}}","op":"not","value":"/codex","message":"ChatGPT opened in Codex mode, not the normal chat"},{"do":"wait","for":"#prompt-textarea, textarea[name=\"prompt\"]","timeout":20000},{"do":"type","sel":"#prompt-textarea, textarea[name=\"prompt\"]","text":"{{question}}","enter":true},{"do":"wait","for":"[data-message-author-role=\"assistant\"], li[data-message-role=\"assistant\"]","timeout":60000},{"do":"wait","for":"[data-testid=\"stop-button\"], button[aria-label*=\"Stop\"]","gone":true,"timeout":180000},{"do":"wait","for":"[data-message-author-role=\"assistant\"] .markdown, li[data-message-role=\"assistant\"] [data-assistant-markdown]","stable":1500,"last":true,"timeout":60000},{"do":"extract","sel":"[data-message-author-role=\"assistant\"] .markdown, li[data-message-role=\"assistant\"] [data-assistant-markdown]","last":true,"as":"answer"},{"do":"extract","sel":":root","attr":"location","as":"link"},{"do":"notify","if":"{{alert}}","title":"ChatGPT answered","message":"{{answer}}"}],"output":{"answer":"{{answer}}","link":"{{link}}"},"notes":"Checked on chatgpt.com (Nov 2026, signed out; works signed in too): the box is #prompt-textarea (wide window) or textarea[name=prompt] (narrow). Enter sends. Run with keepOpen true to leave the chat open."},"ask-claude":{"id":"ask-claude","name":"Ask Claude","description":"Ask Claude (claude.ai) a question in the user's browser, wait for the whole answer and return it with the chat's link. Alerts the user when the answer arrives. Needs the user signed in to claude.ai.","sites":["claude.ai"],"tags":["claude","anthropic","ask","ai","chat","question"],"model":"none","inputs":{"question":{"type":"string","required":true,"description":"what to ask"},"alert":{"type":"boolean","default":true,"description":"show an alert when the answer arrives"}},"steps":[{"do":"open","url":"https://claude.ai/new"},{"do":"wait","for":"[data-testid=\"chat-input\"], div.ProseMirror[contenteditable=\"true\"]","timeout":25000},{"do":"type","sel":"[data-testid=\"chat-input\"], div.ProseMirror[contenteditable=\"true\"]","text":"{{question}}","enter":true},{"do":"wait","for":"[data-is-streaming]","timeout":60000},{"do":"wait","for":"[data-is-streaming=\"true\"]","gone":true,"timeout":180000},{"do":"wait","for":"[data-is-streaming=\"false\"] .standard-markdown","stable":1200,"last":true,"timeout":30000},{"do":"extract","sel":"[data-is-streaming=\"false\"] .standard-markdown","last":true,"as":"answer"},{"do":"extract","sel":":root","attr":"location","as":"link"},{"do":"notify","if":"{{alert}}","title":"Claude answered","message":"{{answer}}"}],"output":{"answer":"{{answer}}","link":"{{link}}"},"notes":"Checked on claude.ai (Nov 2026): the box is [data-testid=chat-input] (ProseMirror), Enter sends; a reply is [data-is-streaming] and becomes \"false\" when done. If not signed in, the box never appears."}};
+  async function seedStarters() {
+    const r = await chrome.storage.local.get(['va.flows', 'va.starters']);
+    const done = new Set(r['va.starters'] || []);
+    const todo = Object.keys(STARTERS).filter((id) => !done.has(id));
+    if (!todo.length) return;
+    const all = r['va.flows'] || {};
+    const now = new Date().toISOString();
+    for (const id of todo) {
+      if (!all[id] && globalThis.VAFlows && globalThis.VAFlows.validate(STARTERS[id]).ok) all[id] = { flow: STARTERS[id], source: 'local', starter: true, approved: true, tested: true, savedAt: now, runs: 0, ok: 0, fail: 0 };
+      done.add(id);
+    }
+    await chrome.storage.local.set({ 'va.flows': all, 'va.starters': [...done] });
+    console.info('[va] starter flows added:', todo.join(', '));
+  }
+  seedStarters().catch((e) => console.warn('[va] starter flows:', e && e.message));
+
   // ---------- The agent's tools ----------
   const NAMES = ['remember', 'show_view'];
   globalThis.__vaMoreTools = {
