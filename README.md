@@ -72,6 +72,26 @@ Before this change the same "ask Claude" question took 13 calls and about 95 s.
   - `assert`: stop with a message, for example when ChatGPT opens in Codex mode.
   - `wait` with `gone` and `stable`: wait until streaming answers finish.
 
+### Tested with the real Muse Spark on 26 varied tasks (Nov 2026)
+
+`tests/harness/world.js` drives the real model through simulated pages and flows; `tests/harness/tasks.js` has the tasks and their checks. They cover:
+- asking two AIs and comparing their answers, and chaining one AI's answer into another;
+- requests in Malayalam and Hindi;
+- "do the usual" and "ask it again" (worked out from recent tasks);
+- diet, family and moving house (memory: replacing a changed fact, forgetting one);
+- a news page with hidden instructions and fake "remember this" text;
+- passwords: not remembered, and not pasted into ChatGPT;
+- ChatGPT stuck in Codex mode;
+- dashboards with live sections, charts and tables.
+
+Fixes that came out of it:
+- The agent's own panel is no longer in its page snapshots.
+- Card numbers and passwords from earlier tasks are hidden in later requests.
+- Memory: changed facts replace old ones, and facts a page "says" about the user are never saved automatically.
+- Flows list their output fields, so pages are built right the first time.
+- Pages run their flows live instead of freezing today's answers.
+- ask-chatgpt recovers from Codex mode by itself.
+
 ## Other improvements in the extension
 
 - **Costs:** a task list with per-task cost; a cost meter that uses Meta's reported token counts and cache hits.

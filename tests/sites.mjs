@@ -49,6 +49,7 @@ const FK = [['boAt Airdopes 141 Bluetooth Headset', 1099, 4.1, 'boat-141'], ['No
 const flipkart = (q) => `<!doctype html><title>Flipkart: ${q}</title><div class="grid">` + FK.map(([t,p,r,slug],i)=>`<div data-id="FK${i}"><div class="slAVV4"><a class="VJA3rP" href="/${slug}/p/itm${i}?pid=FK${i}&lid=x"><img class="DByuf4" alt="${t}" src="https://rukminim2.flixcart.com/${slug}.jpg"></a><a class="pIpigb" href="/${slug}/p/itm${i}">${t}</a><div class="_5OesEi"><div class="MKiFS6">${r}</div></div><div class="hZ3P6w">₹${p.toLocaleString('en-IN')}</div><div class="kRYCnD">₹${(p*2).toLocaleString('en-IN')}</div><span>Add to Compare</span></div></div>`).join('') + `<div data-id="AD1"><span>Sponsored banner</span></div></div>`;
 const ytResults = (q) => `<!doctype html><title>${q} - YouTube</title><ytd-app><ytd-search><ytd-item-section-renderer><div id="contents"></div></ytd-item-section-renderer></ytd-search></ytd-app><script>setTimeout(()=>{const c=document.getElementById('contents');c.insertAdjacentHTML('beforeend','<ytd-video-renderer><a id="video-title" href="/watch?v=yt1&pp=abc" title="Kerala backwaters in 4K"><yt-formatted-string>Kerala backwaters in 4K</yt-formatted-string></a><ytd-channel-name><a href="/@travel">Travel Lens</a></ytd-channel-name><div id="metadata-line"><span>1.2M views</span><span>1 year ago</span></div></ytd-video-renderer>');c.insertAdjacentHTML('beforeend','<yt-lockup-view-model><a href="/watch?v=yt2" class="thumb"></a><h3><a href="/watch?v=yt2">Houseboat day trip, Alleppey</a></h3><a href="/@kerala">Kerala Diaries</a><yt-content-metadata-view-model>300K views · 3 months ago</yt-content-metadata-view-model></yt-lockup-view-model>')},600)</script>`;
 
+let codexMode = false;
 const chatgpt = `<!doctype html><title>ChatGPT</title><main><div id="thread"></div><form id="f"><div id="prompt-textarea" contenteditable="true" class="ProseMirror"></div><button type="button" data-testid="send-button" aria-label="Send prompt">↑</button></form></main>
 <script>const box=document.getElementById('prompt-textarea'),th=document.getElementById('thread');
 box.addEventListener('keydown',e=>{if(e.key!=='Enter'||e.shiftKey)return;e.preventDefault();const q=box.innerText.trim();if(!q)return;box.textContent='';
@@ -76,6 +77,13 @@ https
     else if (host === 'en.wikipedia.org' && u.pathname.startsWith('/wiki/')) html = wiki;
     else if (host === 'news.ycombinator.com' && u.pathname === '/') html = hn;
     else if (host === 'www.flipkart.com' && u.pathname === '/search') html = flipkart(u.searchParams.get('q') || '');
+    else if (host === 'chatgpt.com' && u.pathname === '/__codex_on') (codexMode = true), (html = 'codex mode on');
+    else if (host === 'chatgpt.com' && u.pathname === '/__codex_off') (codexMode = false), (html = 'codex mode off');
+    // Codex mode (test): the chat home sends you to /codex until you take its link back to the normal chat.
+    else if (host === 'chatgpt.com' && u.pathname === '/' && codexMode && !/codex=0/.test(req.headers.cookie || '')) {
+      res.writeHead(302, { location: '/codex' });
+      return res.end();
+    } else if (host === 'chatgpt.com' && u.pathname.startsWith('/codex')) html = '<!doctype html><title>Codex</title><h1>Codex</h1><nav><a href="/" onclick="document.cookie=\'codex=0; path=/\'">ChatGPT</a></nav><textarea aria-label="Describe a task"></textarea>';
     else if (host === 'chatgpt.com' && !u.pathname.startsWith('/codex')) html = chatgpt;
     else if (host === 'claude.ai') html = claude;
     else if (host === 'www.youtube.com' && u.pathname === '/results') html = ytResults(u.searchParams.get('search_query') || '');

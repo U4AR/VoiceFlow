@@ -38,6 +38,35 @@
    "as": "start"
   },
   {
+   "do": "set",
+   "value": [
+    {
+     "at": "{{start}}"
+    }
+   ],
+   "as": "here"
+  },
+  {
+   "do": "filter",
+   "in": "{{here}}",
+   "field": "at",
+   "op": "contains",
+   "value": "/codex",
+   "as": "codex"
+  },
+  {
+   "do": "click",
+   "if": "{{codex}}",
+   "sel": "a[href=\"/\"], a[data-testid=\"create-new-chat-button\"]",
+   "optional": true
+  },
+  {
+   "do": "extract",
+   "sel": ":root",
+   "attr": "location",
+   "as": "start"
+  },
+  {
    "do": "assert",
    "that": "{{start}}",
    "op": "not",
@@ -96,5 +125,6 @@
   "answer": "{{answer}}",
   "link": "{{link}}"
  },
- "notes": "Checked on chatgpt.com (Nov 2026, signed out; works signed in too): the box is #prompt-textarea (wide window) or textarea[name=prompt] (narrow). Enter sends. Run with keepOpen true to leave the chat open."
+ "notes": "Checked on chatgpt.com (Nov 2026, signed out; works signed in too): the box is #prompt-textarea (wide window) or textarea[name=prompt] (narrow). Enter sends. Run with keepOpen true to leave the chat open. If chatgpt.com opens in Codex mode (/codex), the flow clicks the link back to the normal chat first; it stops with an error only if it is still in Codex.",
+ "version": 2
 }

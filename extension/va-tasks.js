@@ -26,6 +26,9 @@
   host.style.cssText = 'position:fixed;inset:auto;top:0;left:0;width:0;height:0;margin:0;padding:0;border:0;background:transparent;overflow:visible;z-index:2147483647;display:block;';
   const topLayer = typeof host.showPopover === 'function';
   if (topLayer) host.setAttribute('popover', 'manual');
+  // Named so the worker can leave it out of the agent's page snapshots (va-tasks-bg.js, __vaDropOwnUi).
+  host.setAttribute('role', 'complementary');
+  host.setAttribute('aria-label', 'Voice Agent panel');
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>
     :host { all: initial; }

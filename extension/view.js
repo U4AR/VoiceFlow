@@ -20,6 +20,7 @@ function scopeOf(item, index) {
 function listOf(data, path) {
   let d = data;
   if (path) for (const k of String(path).split('.')) d = d && typeof d === 'object' ? d[k] : undefined;
+  if (d === undefined && Array.isArray(data)) d = data; // a path into a result that is already the list
   if (Array.isArray(d)) return d;
   if (d && Array.isArray(d.items)) return d.items;
   return d === undefined || d === null ? [] : [d];

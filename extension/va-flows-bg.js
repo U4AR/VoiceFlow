@@ -222,10 +222,37 @@
       return { ok: false, error: String((e && e.message) || e), log: e.log || [], notes };
     }
   }
+  // The shape of a flow's output, so the agent (and show_view) know its fields without running it:
+  // {text: '[{title, price, link}]', keys: [...], path: 'rows' when the list is inside an object}.
+  function shapeOf(v) {
+    const keysOf = (o) => Object.keys(o).filter((k) => k !== 'note').slice(0, 10);
+    if (Array.isArray(v)) {
+      const o = v.find((x) => x && typeof x === 'object' && !Array.isArray(x));
+      return o ? { text: '[{' + keysOf(o).join(', ') + '}]', keys: keysOf(o), path: '' } : { text: '[values]', keys: [], path: '' };
+    }
+    if (v && typeof v === 'object') {
+      const top = keysOf(v);
+      const p = top.find((k) => Array.isArray(v[k]) && v[k].some((x) => x && typeof x === 'object'));
+      if (p) {
+        const inner = shapeOf(v[p]);
+        return { text: '{' + top.map((k) => (k === p ? k + ': ' + inner.text : k)).join(', ') + '}', keys: inner.keys, top, path: p };
+      }
+      return { text: '{' + top.join(', ') + '}', keys: top, path: '' };
+    }
+    return null;
+  }
+  // Known without a run when the flow's output is an object of templates ({answer: '{{answer}}', link: ...}).
+  const staticShape = (flow) => (flow.output && typeof flow.output === 'object' && !Array.isArray(flow.output) ? shapeOf(flow.output) : null);
+  globalThis.__vaFlowShape = (id) => (cache[id] && (cache[id].shape || staticShape(cache[id].flow))) || null;
+  globalThis.__vaLastFlow = new Map(); // conversation → the last flow it ran {id, input}
   async function record(id, r, where) {
     await update((all) => {
       const rec = all[id];
       if (!rec) return;
+      if (r.ok) {
+        const sh = shapeOf(r.output);
+        if (sh && (sh.keys.length || !rec.shape)) rec.shape = sh;
+      }
       rec.runs = (rec.runs || 0) + 1;
       if (r.ok) rec.ok = (rec.ok || 0) + 1;
       else (rec.fail = (rec.fail || 0) + 1), (rec.lastError = clip(r.error, 300));
@@ -317,6 +344,7 @@
       if (a.keepOpen) input.keepOpen = true;
       const r = await runFlow(conversationId, f.flow, input, signal);
       await record(id, r, f.where);
+      if (r.ok) globalThis.__vaLastFlow.set(conversationId, { id, input: a.input && typeof a.input === 'object' ? a.input : {} });
       if (!r.ok)
         return fail(
           'flow ' + id + ' failed: ' + r.error + '\nSteps: ' + r.log.slice(-10).join(' | ') +
@@ -476,7 +504,12 @@
   chrome.tabs.onUpdated.addListener((id, ch, t) => ch.status === 'complete' && t.active && noteTab());
   chrome.windows && chrome.windows.onFocusChanged.addListener(() => noteTab());
   noteTab();
-  const line = (f, extra) => '- ' + f.id + ': ' + clip(f.name, 60) + ' (' + Object.entries(f.inputs || {}).map(([k, s]) => k + (s.required ? '' : '?')).join(', ') + ')' + (extra || '');
+  // One line per flow: inputs (optional ones with ?, booleans with their default) and, when known, the output's fields.
+  const line = (f, extra, rec) => {
+    const sh = (rec && rec.shape) || staticShape(f);
+    const ins = Object.entries(f.inputs || {}).map(([k, s]) => k + (s.required ? '' : '?') + (s.type === 'boolean' && s.default !== undefined ? '=' + s.default : ''));
+    return '- ' + f.id + ': ' + clip(f.name, 60) + ' (' + ins.join(', ') + ')' + (sh && sh.text ? ' → ' + clip(sh.text, 110) : '') + (extra || '');
+  };
 
   // A short list of flows for the agent's instructions (cheap: one line each). Flows for the current site first.
   globalThis.__vaFlowsContext = () => {
@@ -493,12 +526,12 @@
     let out = '';
     if (here.length || libHere.length) {
       out += 'Flows for the site the user is on (' + currentHost + '); run_flow does the job in one step:\n';
-      out += here.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '')).join('\n') + (here.length ? '\n' : '');
+      out += here.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '', r)).join('\n') + (here.length ? '\n' : '');
       out += libHere.map((f) => '- ' + f.id + ': ' + clip(f.name, 60) + ' (' + (f.inputs || '') + ') [online library' + (f.runs ? ', ' + f.ok + '/' + f.runs + ' runs worked' : '') + ']').join('\n') + (libHere.length ? '\n' : '');
     }
     const rest = all.filter((r) => !here.includes(r)).slice(0, 15);
     if (!all.length) return out + 'Flows: none saved yet.' + lib + ' Before working through a site by hand for a repeatable job (reading mail results, searching a shop, listing a feed), find_flows may have one.\n';
-    if (rest.length) out += (here.length ? 'Other saved flows' : 'Saved flows (run_flow does the whole job in one step; find_flows with id shows one)') + ':\n' + rest.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '')).join('\n') + '\n';
+    if (rest.length) out += (here.length ? 'Other saved flows' : 'Saved flows (run_flow does the whole job in one step; find_flows with id shows one)') + ':\n' + rest.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '', r)).join('\n') + '\n';
     return out + (lib ? lib.trim() + '\n' : '');
   };
 

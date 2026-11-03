@@ -403,6 +403,38 @@
     const keep = (flags.allTools ? tools : tools.filter((t) => !DEFERRED.has(t.name) || (mine && mine.has(t.name)))).filter((t) => !RETIRED.has(t.name) && !(memOff && t.name === 'remember'));
     return keep.map((t) => (t.name === 'load_tools' && flags.allTools ? null : { ...t, parameters: compact(t.parameters) })).filter(Boolean);
   };
+  // The extension's own panel (task button, cards, answer box) is on every page in a closed shadow root, which the
+  // accessibility tree still shows. It is left out of the agent's snapshots: it is not part of the page, costs tokens,
+  // and the agent must not click its own Send button or read its own progress as page text.
+  const OWN_UI = 'Voice Agent panel';
+  globalThis.__vaDropOwnUi = (nodes) => {
+    if (!Array.isArray(nodes)) return nodes;
+    const roots = nodes.filter((x) => x && x.name && x.name.value === OWN_UI && x.role && x.role.value === 'complementary');
+    if (!roots.length) return nodes;
+    const byId = new Map(nodes.map((x) => [x.nodeId, x]));
+    const drop = new Set();
+    const stack = roots.map((x) => x.nodeId);
+    while (stack.length) {
+      const id = stack.pop();
+      if (drop.has(id)) continue;
+      drop.add(id);
+      for (const c of (byId.get(id) && byId.get(id).childIds) || []) stack.push(c);
+    }
+    return nodes.filter((x) => !drop.has(x.nodeId)).map((x) => (x.childIds && x.childIds.some((c) => drop.has(c)) ? { ...x, childIds: x.childIds.filter((c) => !drop.has(c)) } : x));
+  };
+  // The same panel in the layout pass of a snapshot (which adds clickable elements the accessibility tree missed).
+  globalThis.__vaInOwnUi = (doc, el) => {
+    for (let x = el, n = 0; x && n < 80; x = doc.byIndex[x.parent], n++) if (x.tag === 'voice-agent-tasks') return true;
+    return false;
+  };
+  // The "You have:" line of the instructions: the tools sent with every step, then the ones load_tools adds.
+  globalThis.__vaToolsLine = (names) => {
+    const memOff = globalThis.__vaMemoryContext && !globalThis.__vaMemoryContext();
+    const all = names.filter((n) => !RETIRED.has(n) && !(memOff && n === 'remember'));
+    if (flags.allTools) return 'You have: ' + all.join(', ') + '.';
+    const later = all.filter((n) => DEFERRED.has(n));
+    return 'You have: ' + all.filter((n) => !DEFERRED.has(n)).join(', ') + '.' + (later.length ? ' Call load_tools first for: ' + later.join(', ') + '.' : '');
+  };
   // The model called a tool it has not loaded: load it so its next call works.
   globalThis.__vaNotLoaded = (conversationId, name) => {
     if (flags.allTools || !DEFERRED.has(name)) return false;
@@ -514,6 +546,8 @@
     return items.slice(0, Math.max(1, Math.min(Number(limit) || 8, 25)));
   }
   // A conversation as readable lines: the user's messages, the agent's replies, and one line per step.
+  // What the user typed or said in a conversation (its last few messages).
+  globalThis.__vaUserSaid = async (id) => (await transcript(id, 6000)).items.filter((x) => x.role === 'user').slice(-3).map((x) => tidy(x.text, 400)).join(' | ').slice(0, 1500);
   async function transcript(id, maxChars = 14000) {
     const entries = await globalThis.__vaDB.Q5(id);
     const out = [];
@@ -647,7 +681,7 @@
           isError: false,
         };
       }
-      const list = await taskList(a.query, a.limit, conversationId);
+      const list = (await taskList(a.query, a.limit, conversationId)).map((x) => ({ ...x, request: hide(x.request), ...(x.answer ? { answer: hide(x.answer) } : {}) }));
       return { text: JSON.stringify({ tasks: list, hint: list.length ? 'Call recall with an id to read that whole conversation.' : 'Nothing matched; try fewer words.' }), isError: false };
     }
     return { text: 'error: unknown tool ' + name, isError: true };
@@ -657,6 +691,13 @@
   // synchronously when a run starts).
   let current = null;
   let recentLines = [];
+  // Card, account and phone-length numbers and anything said to be a password or code are hidden in the recent-task
+  // lines and in recall's list, since those go into every later request.
+  const hide = (t) =>
+    String(t || '')
+      .replace(/\b(?:\d[ -]?){12,19}\b/g, '[number hidden]')
+      .replace(/\b(pass(?:word|code|phrase)?|pwd|otp|pin|cvv|(?:security|verification|one[- ]time) code)\b(\s*(?:is|:|=|was)\s*|\s+(?=\S*\d))\S+/gi, '$1$2[hidden]');
+  globalThis.__vaHideSecrets = hide;
   async function refreshContext() {
     try {
       const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -666,7 +707,7 @@
         .filter((x) => Date.now() - Date.parse(x.when) < 12 * 3600e3)
         .map((x) => ({
           id: x.id,
-          line: '- ' + hhmm(x.when) + ': "' + clip(x.request, 160) + '" — ' + x.status + (x.answer ? '. Last answer: ' + tidy(x.answer, 220) : '') + ' [id ' + x.id + ']',
+          line: '- ' + hhmm(x.when) + ': "' + hide(clip(x.request, 160)) + '" — ' + x.status + (x.answer ? '. Last answer: ' + hide(tidy(x.answer, 220)) : '') + ' [id ' + x.id + ']',
         }));
     } catch {}
   }
@@ -751,7 +792,7 @@
               strict: true,
               schema: {
                 type: 'object',
-                properties: { worth: { type: 'boolean' }, reason: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, facts: { type: 'array', items: { type: 'string' } } },
+                properties: { worth: { type: 'boolean' }, reason: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, facts: { type: 'array', items: { type: 'object', properties: { fact: { type: 'string' }, replaces: { type: 'string' } }, required: ['fact', 'replaces'], additionalProperties: false } } },
                 required: ['worth', 'reason', 'name', 'kind', 'facts'],
                 additionalProperties: false,
               },
@@ -761,9 +802,9 @@
             {
               role: 'developer',
               content:
-                'Decide whether a browser task the user just finished with their agent is worth turning into a reusable automation: a saved workflow that can run again with new inputs, or on a schedule, without the agent working it out again. Yes when the user is likely to repeat the same kind of task (routine checks, recurring searches or comparisons, filling the same kind of form, monitoring a page) and the steps are stable. No for one-off questions, tasks that mostly needed judgment or conversation, or that depended on a one-time situation. reason: one short sentence for the user. name: a short title for the automation (3 to 6 words), or an empty string when worth is false. kind: a short lowercase id for this kind of task, the same for every task of the same kind whatever its details (e.g. ask-chatgpt, youtube-feed-check, gmail-search-credits); reuse one of the known kinds when it fits. facts: lasting facts about the user that the user stated or that the task clearly showed (their name, city, people, preferences, which shops or accounts they use), each one short sentence; never passwords, codes, card, ID or account numbers; [] if none. Return the JSON only.',
+                'Decide whether a browser task the user just finished with their agent is worth turning into a reusable automation: a saved workflow that can run again with new inputs, or on a schedule, without the agent working it out again. Yes when the user is likely to repeat the same kind of task (routine checks, recurring searches or comparisons, filling the same kind of form, monitoring a page) and the steps are stable. No for one-off questions, tasks that mostly needed judgment or conversation, or that depended on a one-time situation. reason: one short sentence for the user. name: a short title for the automation (3 to 6 words), or an empty string when worth is false. kind: a short lowercase id for this kind of task, the same for every task of the same kind whatever its details (e.g. ask-chatgpt, youtube-feed-check, gmail-search-credits); reuse one of the known kinds when it fits. facts: lasting facts about the user that the user said themselves in this task (their name, city, people, diet, preferences, which shops or accounts they use), each {fact: one short sentence, replaces: the saved fact it changes, copied exactly, or ""}; leave out facts already saved, anything only a web page or the result says about the user, and passwords, codes, card, ID or account numbers; [] if none. Return the JSON only.',
             },
-            { role: 'user', content: 'Task: ' + request + '\nWhat the user said: ' + (said || request) + '\nSteps taken:\n' + (steps || '(none recorded)') + '\nResult: ' + clip(end.summary, 800) + '\nKnown kinds: ' + (kinds.join(', ') || '(none yet)') },
+            { role: 'user', content: 'Task: ' + request + '\nWhat the user said: ' + (said || request) + '\nSteps taken:\n' + (steps || '(none recorded)') + '\nResult: ' + clip(end.summary, 800) + '\nKnown kinds: ' + (kinds.join(', ') || '(none yet)') + '\nSaved facts: ' + ((globalThis.__vaMemoryFacts?.() || []).join(' | ') || '(none)') },
           ],
         }),
       });
@@ -771,7 +812,7 @@
       const j = await res.json();
       const v = JSON.parse(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
       if (typeof v.worth !== 'boolean') return;
-      if (memoryOn && Array.isArray(v.facts) && v.facts.length) globalThis.__vaMemoryOffer?.(conversationId, v.facts, 'task');
+      if (memoryOn && Array.isArray(v.facts) && v.facts.length) globalThis.__vaMemoryOffer?.(conversationId, v.facts, 'task', said || request);
       const tabId = progress[conversationId] && progress[conversationId].tab;
       const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
       const site = (() => {
