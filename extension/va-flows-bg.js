@@ -126,10 +126,21 @@
     }
     await new Promise((r) => setTimeout(r, 300));
   }
+  // The tab a voice task opened for itself (not the user's own tab): a flow run by that task works there, so the
+  // task does not end up with a second tab, and the page is one the agent already watches (it renders like a
+  // visible tab; some sites draw nothing in a plain background tab).
+  const ownTab = new Map(); // conversation → tab id
   function adapters(conversationId, signal, note) {
+    let ownUser = null; // the first tab of the top flow takes the task's tab; inner flows get their own tabs
     return {
       signal,
       async open(tab, url, newTab) {
+        const own = ownTab.get(conversationId);
+        if (!tab.id && !newTab && own && (!ownUser || ownUser === tab) && (await chrome.tabs.get(own).catch(() => null))) {
+          ownUser = tab;
+          tab.id = own;
+          tab.created = false;
+        }
         if (!tab.id || newTab) {
           if (tab.id && tab.created) chrome.tabs.remove(tab.id).catch(() => {});
           const t = await chrome.tabs.create({ url, active: false });
@@ -144,6 +155,14 @@
         const t = await chrome.tabs.get(tab.id);
         const host = new URL(t.url || url).hostname.replace(/^www\./, '');
         if (!tab.sites.some((s) => F.hostIn(host, s))) throw new Error('the page went to ' + host + ', which this flow does not list (signed out, or redirected?)');
+      },
+      async reveal(tab) {
+        try {
+          const t = await chrome.tabs.get(tab.id);
+          if (t.active) return;
+          await chrome.tabs.update(tab.id, { active: true });
+          console.info('[va] flow: brought its tab to the front (the page was not drawing in the background)');
+        } catch {}
       },
       async back(tab) {
         const before = (await chrome.tabs.get(tab.id)).url;
@@ -323,7 +342,7 @@
       const v = F.validate(f.flow);
       if (!v.ok) return fail('flow ' + id + ' is not valid: ' + v.errors.join('; '));
       if (f.where === 'online' || (f.rec && f.rec.source === 'online' && !f.rec.approved)) {
-        if (v.acts || v.usesAI) {
+        if ((v.acts || v.usesAI) && globalThis.__vaAskBefore?.(f.flow.sites) !== false) {
           if (conversationId === 'mcp')
             return fail(id + ' comes from the online library and ' + (v.acts ? 'clicks or types' : 'uses AI') + ', so the user has to approve it once in the browser first (ask the Voice Agent to run it, and answer the card). Read-only library flows run without that.');
           const d = F.describe(f.flow);
@@ -341,12 +360,23 @@
           all[id] = { flow: f.flow, source: 'online', approved: true, savedAt: new Date().toISOString(), runs: 0, ok: 0, fail: 0 };
         });
       }
-      const input = a.input && typeof a.input === 'object' ? { ...a.input } : {};
+      let input = a.input && typeof a.input === 'object' ? { ...a.input } : {};
       if (a.keepOpen) input.keepOpen = true;
-      const r = await runFlow(conversationId, f.flow, input, signal);
-      const ph = r.ok && conversationId !== 'view' && conversationId !== 'mcp' ? await globalThis.__vaFlowLearn(conversationId, id, a.input) : '';
+      let r = null;
+      let early = false;
+      flowCalled.set(conversationId, Date.now());
+      const pre = prestarts.get(conversationId);
+      if (pre && pre.id === id && !a.rerun) {
+        prestarts.delete(conversationId);
+        const got = await pre.ready;
+        if (got) (r = await got.run), (input = got.input), (early = true);
+      }
+      if (!r) r = await runFlow(conversationId, f.flow, input, signal);
+      const given = early ? input : a.input && typeof a.input === 'object' ? a.input : {};
+      const ph = r.ok && conversationId !== 'view' && conversationId !== 'mcp' ? await globalThis.__vaFlowLearn(conversationId, id, given) : '';
       await record(id, r, f.where, ph);
-      if (r.ok) globalThis.__vaLastFlow.set(conversationId, { id, input: a.input && typeof a.input === 'object' ? a.input : {} });
+      if (r.ok) globalThis.__vaLastFlow.set(conversationId, { id, input: given });
+      if (early) r.notes.push('This run was started from the user\'s words as soon as they spoke, with input ' + clip(JSON.stringify(given), 300) + '. If that input is wrong, call run_flow again with rerun true.');
       if (!r.ok)
         return fail(
           'flow ' + id + ' failed: ' + r.error + '\nSteps: ' + r.log.slice(-10).join(' | ') +
@@ -578,6 +608,7 @@
     return best.score >= 0.3 ? 'maybe' : 'none';
   };
   const hints = new Map(); // task text → Promise<hint>
+  const resolved = new Map(); // task text → hint, once known
   const ready_ = []; // hints waiting for their conversation: {text, hint, at}
   const byConv = new Map(); // conversation → hint
   globalThis.__vaFlowHintPrefetch = (text, tabId) => {
@@ -606,6 +637,8 @@
         }
       }
       console.info('[va] flow lookup:', JSON.stringify({ task: clip(text, 60), saved: hint.local, library: hint.online && hint.online.flows.map((f) => f.id + ':' + f.score), checked: hint.onlineChecked }));
+      resolved.set(text, hint);
+      if (resolved.size > 30) resolved.delete(resolved.keys().next().value);
       return hint;
     })().catch(() => null);
     hints.set(text, p);
@@ -618,6 +651,83 @@
     if (!p) return;
     const hint = await Promise.race([p, new Promise((r) => setTimeout(() => r(null), 1500))]);
     if (hint) ready_.push({ text, hint, at: Date.now() });
+  };
+  // Waits for the lookup (at most 1.5 s) without handing the hint to a conversation yet.
+  globalThis.__vaFlowHintWait = async (text) => {
+    const p = globalThis.__vaFlowHintPrefetch(text);
+    if (p) await Promise.race([p, new Promise((r) => setTimeout(r, 1500))]);
+  };
+  // A request that a flow will do (the task then needs no copy of the user's page to work in).
+  globalThis.__vaFlowQuick = (text) => {
+    const h = resolved.get(String(text || '').trim());
+    return !!(h && ((h.local && h.local.verdict === 'use') || (h.online && h.online.verdict === 'use')));
+  };
+
+  // ---------- Starting the flow before the agent ----------
+  // When a saved flow clearly does the request, its inputs are read from the user's words with one fast model call
+  // and the flow starts at once, while the agent reads its instructions; the agent's run_flow then gets that run.
+  const prestarts = new Map(); // conversation → {id, ready: Promise<{input, run} | null>}
+  const flowCalled = new Map(); // conversation → when its agent last called run_flow (then it is too late to start early)
+  const calledNow = (c) => Date.now() - (flowCalled.get(c) || 0) < 2500;
+  async function fillInputs(flow, text) {
+    const key = await globalThis.__vaMetaKey?.();
+    if (!key) return null;
+    const ins = flow.inputs || {};
+    const res = await fetch('https://api.meta.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
+      body: JSON.stringify({
+        model: F.MODELS.fast,
+        reasoning_effort: 'minimal',
+        max_completion_tokens: 600,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'user',
+            content:
+              'The user said (voice, transcribed): ' + JSON.stringify(clip(text, 1500)) + '\n\nFill the inputs of the browser flow "' + flow.name + '" (' + clip(flow.description, 300) + ').\nInputs: ' + JSON.stringify(ins) +
+              '\nReturn JSON {"ok": true, "input": {...}} with the values taken from what the user said, in their words and language (a question to pass on stays a question; do not answer it). Leave out inputs they did not mention. If the request is not something this flow does, or a required input is missing, return {"ok": false}.',
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const out = JSON.parse(String((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '{}').replace(/^```(?:json)?|```$/g, '').trim());
+    if (!out || out.ok !== true || !out.input || typeof out.input !== 'object') return null;
+    const input = {};
+    for (const [k, spec] of Object.entries(ins)) {
+      const v = out.input[k];
+      if (v === undefined || v === null || v === '') {
+        if (spec.required && spec.default === undefined) return null;
+        continue;
+      }
+      input[k] = spec.type === 'number' ? Number(v) : spec.type === 'boolean' ? v === true || v === 'true' : String(v);
+    }
+    return input;
+  }
+  globalThis.__vaFlowPrestart = (text, tabId, conversationId, own) => {
+    if (!conversationId) return;
+    if (own && Number.isInteger(tabId)) {
+      ownTab.set(conversationId, tabId);
+      if (ownTab.size > 100) ownTab.delete(ownTab.keys().next().value);
+    }
+    const h = resolved.get(String(text || '').trim());
+    if (!h || !h.local || h.local.verdict !== 'use' || calledNow(conversationId)) return;
+    const id = h.local.ids[0];
+    const rec = cache[id];
+    if (!rec || (rec.source === 'online' && !rec.approved)) return;
+    const ready = (async () => {
+      if ((await chrome.storage.local.get('va.flows.early'))['va.flows.early'] === false) return null;
+      const input = await fillInputs(rec.flow, text);
+      if (!input || calledNow(conversationId)) return null;
+      console.info('[va] flow started before the agent:', id, clip(JSON.stringify(input), 160));
+      return { input, run: runFlow(conversationId, rec.flow, input) };
+    })().catch((e) => (console.info('[va] flow not started early:', clip(e.message, 120)), null));
+    prestarts.set(conversationId, { id, ready, at: Date.now() });
+    for (const [c, p] of prestarts) if (Date.now() - p.at > 15 * 60 * 1000) prestarts.delete(c);
+    if (flowCalled.size > 200) flowCalled.delete(flowCalled.keys().next().value);
   };
   const describeFlow = (f) => f.id + ' (' + clip(f.name, 50) + (f.inputs ? '; inputs ' + clip(typeof f.inputs === 'string' ? f.inputs : Object.keys(f.inputs).join(', '), 80) : '') + ')';
   globalThis.__vaFlowHintFor = (conversationId) => {
@@ -695,7 +805,7 @@
     const r = await online('/api/flows/' + encodeURIComponent(id), { timeout: 8000 });
     const v = F.validate(r.flow);
     if (!v.ok) return { ok: false, error: 'not valid: ' + v.errors.join('; ') };
-    if (v.acts || v.usesAI) {
+    if ((v.acts || v.usesAI) && globalThis.__vaAskBefore?.(r.flow.sites) !== false) {
       const d = F.describe(r.flow);
       const answer = await askUser(conversationId, {
         title: 'Use a flow from the library?',

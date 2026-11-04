@@ -107,7 +107,9 @@ try:
     print('   ', fl[-1] if fl else 'no flow log')
     check('quick action under ~6 s on the replica (model calls + the flow)', secs < 8, secs)
 
-    # ---- 2. memory: ask first (default) ----
+    # ---- 2. memory: ask first (a setting; automatic is the default) ----
+    check('memory is automatic by default', sw.evaluate("chrome.storage.local.get('va.memory.mode').then(r=>r['va.memory.mode']===undefined)") and sw.evaluate("globalThis.__vaMemoryContext().includes('call remember') && !globalThis.__vaMemoryContext().includes('the user is asked')"), '')
+    sw.evaluate("chrome.storage.local.set({'va.memory.mode':'ask'})"); time.sleep(0.5)
     a, secs, _ = run_task('My name is Ashish and I live in Thrissur. Ask nothing, just say hi.')
     check('remember: the task finishes without waiting for the answer', a and a['status'] == 'done', a)
     card = None

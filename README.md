@@ -31,7 +31,7 @@ Plain JSON, no code:
 Safety rules:
 - A flow can only open the sites it lists.
 - It never presses pay, order, send, post, delete or subscribe buttons, and never types passwords.
-- A flow from the library that clicks, types or uses AI runs only after the user approves it once.
+- A flow from the library that clicks, types or uses AI on a sensitive site (a bank, payments, investing, tax, government, health, sign-in pages) runs only after the user approves it once.
 
 The agent writes flows itself. It reads the page's lists and fields with `inspect_page`, and `save_flow` test-runs the flow before saving it. Format and API: `library/README.md`.
 
@@ -57,6 +57,21 @@ The agent writes flows itself. It reads the page's lists and fields with `inspec
 
 Before this change the same "ask Claude" question took 13 calls and about 95 s.
 
+## When the agent asks first
+
+- **Ordinary sites:** the agent submits forms and uploads without asking.
+- **Sensitive sites:** it asks before submitting. These are banks, payments, investing, insurance, tax, government, health, and sign-in or account pages, recognised by the site's address.
+- **Deleting:** it always asks first.
+- **Always the user's step, on any site:** typing a password, card number or one-time code, paying, and granting access.
+- A rule set for a site ("always allow" or "always ask") wins. The Tasks page has a setting to ask on every site.
+- **Memory** saves facts automatically. A fact that may have come from a web page, rather than from the user, is still asked about.
+
+## Speed: a flow starts as soon as you speak
+
+- When a saved flow clearly does the request, one fast model call reads its inputs from the user's words. The flow then starts right away, while the agent is still building its first step. The agent's `run_flow` then gets that run instead of starting a second one. There is a switch for this on the Tasks page.
+- A voice task makes its own tab. A flow it runs works in that tab, not in a separate background tab. Some sites, ChatGPT among them, do not draw their page in a plain background tab. If a page is still not ready after 6 s, the flow brings its tab to the front.
+- When a flow will do the job, the task's tab starts empty instead of copying the page the user was on.
+
 ## Finding, adopting and making flows automatically
 
 - **Before every task** the extension looks for a flow that does it: among saved flows (by words) and in the online library (`POST /api/resolve`, by words and meaning, multilingual). The lookup starts while the voice request is routed and waits at most 1.5 s. The agent's first instructions then say one of:
@@ -64,7 +79,7 @@ Before this change the same "ask Claude" question took 13 calls and about 95 s.
   - "flows that may do this: …";
   - "no flow does this; do it yourself (no need to call find_flows)".
 - **Repeated tasks become flows by default.** When the same kind of task comes back and no flow covers it:
-  - the extension adopts a library flow for it (asking first if that flow clicks, types or uses AI);
+  - the extension adopts a library flow for it (asking first only if that flow clicks, types or uses AI on a sensitive site);
   - otherwise an agent writes and tests one in the background.
   - At most 3 a day, with a note on the page and an off switch on the Tasks page.
 - **The library learns.**

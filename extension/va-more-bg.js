@@ -1,6 +1,6 @@
 // Voice Agent: memory about the user, views (pages that show results), and spotting tasks worth a flow.
 //
-//  - Memory (va.memory: [{id, fact, at, from}], va.memory.mode: 'ask' (default) | 'auto' | 'off'). The agent calls
+//  - Memory (va.memory: [{id, fact, at, from}], va.memory.mode: 'auto' (default: saved with a note that can undo it) | 'ask' | 'off'). The agent calls
 //    remember when it learns a lasting fact about the user; after each finished task the "worth automating?" check
 //    also lists facts it saw (no extra model call). In "ask" mode a card asks the user first (the task does not wait
 //    for the answer); in "auto" mode facts are saved at once. Saved facts go into every task's instructions.
@@ -27,11 +27,11 @@
 
   // ---------- Memory ----------
   let memory = [];
-  let mode = 'ask';
+  let mode = 'auto';
   const loadMemory = async () => {
     const r = await chrome.storage.local.get(['va.memory', 'va.memory.mode']);
     memory = Array.isArray(r['va.memory']) ? r['va.memory'] : [];
-    mode = ['ask', 'auto', 'off'].includes(r['va.memory.mode']) ? r['va.memory.mode'] : 'ask';
+    mode = ['ask', 'auto', 'off'].includes(r['va.memory.mode']) ? r['va.memory.mode'] : 'auto';
   };
   loadMemory();
   chrome.storage.onChanged.addListener((ch, area) => area === 'local' && (ch['va.memory'] || ch['va.memory.mode']) && loadMemory());

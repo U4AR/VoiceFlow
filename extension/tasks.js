@@ -398,7 +398,9 @@ renderMcp();
 
 // ---------- Suggested flows, views, memory ----------
 async function renderMore() {
-  const r = await chrome.storage.local.get(['va.patterns', 'va.views', 'va.memory', 'va.memory.mode', 'va.flows.auto', 'va.flows.learn', 'va.autoFlows']);
+  const r = await chrome.storage.local.get(['va.patterns', 'va.views', 'va.memory', 'va.memory.mode', 'va.flows.auto', 'va.flows.learn', 'va.autoFlows', 'va.ask', 'va.flows.early']);
+  if (document.activeElement !== $('askMode')) $('askMode').value = r['va.ask'] === 'always' ? 'always' : 'sensitive';
+  $('flowEarly').checked = r['va.flows.early'] !== false;
   $('autoFlows').checked = r['va.flows.auto'] !== false;
   $('flowLearn').checked = r['va.flows.learn'] !== false;
   const made = (r['va.autoFlows'] || []).slice(-5).reverse();
@@ -438,7 +440,7 @@ async function renderMore() {
     d.append(a, ui.el('span', 'meta', what), ui.button('Delete', 'ghost', () => ui.send({ type: 'va.viewDelete', id: v.id })));
     vb.append(d);
   }
-  if (document.activeElement !== $('memMode')) $('memMode').value = r['va.memory.mode'] || 'ask';
+  if (document.activeElement !== $('memMode')) $('memMode').value = r['va.memory.mode'] || 'auto';
   const mb = $('memList');
   mb.textContent = '';
   const mem = Array.isArray(r['va.memory']) ? r['va.memory'] : [];
@@ -450,6 +452,8 @@ async function renderMore() {
   }
 }
 $('memMode').onchange = (e) => chrome.storage.local.set({ 'va.memory.mode': e.target.value });
+$('askMode').onchange = (e) => chrome.storage.local.set({ 'va.ask': e.target.value });
+$('flowEarly').onchange = (e) => chrome.storage.local.set({ 'va.flows.early': e.target.checked });
 $('memAdd').onsubmit = async (e) => {
   e.preventDefault();
   const v = $('memFact').value.trim();
@@ -461,6 +465,6 @@ $('memAdd').onsubmit = async (e) => {
 $('autoFlows').onchange = () => chrome.storage.local.set({ 'va.flows.auto': $('autoFlows').checked });
 $('flowLearn').onchange = () => chrome.storage.local.set({ 'va.flows.learn': $('flowLearn').checked });
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area === 'local' && (ch['va.patterns'] || ch['va.views'] || ch['va.memory'] || ch['va.memory.mode'] || ch['va.autoFlows'] || ch['va.flows.auto'] || ch['va.flows.learn'])) renderMore();
+  if (area === 'local' && (ch['va.patterns'] || ch['va.views'] || ch['va.memory'] || ch['va.memory.mode'] || ch['va.autoFlows'] || ch['va.flows.auto'] || ch['va.flows.learn'] || ch['va.ask'] || ch['va.flows.early'])) renderMore();
 });
 renderMore();

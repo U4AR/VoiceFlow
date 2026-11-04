@@ -332,6 +332,43 @@
       } catch {}
     });
   };
+  // ---------- When to ask before changing something ----------
+  // Asking before every form is noise. By default the agent goes ahead on ordinary sites and asks first only on
+  // sensitive ones (banks, payments, investments, insurance, tax, government, health, sign-in and account pages) and
+  // before deleting. Typing a password, card number or one-time code, paying, and granting access stay the user's own
+  // step on every site (the page hands those over). va.ask: 'sensitive' (default) | 'always'.
+  const SENSITIVE_LABELS = new Set(
+    ('bank banking netbank netbanking ibank onlinesbi sbi hdfc hdfcbank icici icicibank axisbank kotak kotak811 yesbank pnb pnbindia canarabank bankofbaroda ' +
+      'unionbankofindia federalbank southindianbank idfcfirstbank indusind idbibank rblbank aubank bandhanbank paypal stripe razorpay paytm phonepe bhimupi upi ' +
+      'wallet pay payment payments checkout billing card cards credit creditcard loan loans emi insurance policybazaar licindia invest investing trading demat ' +
+      'zerodha kite groww upstox angelone smallcase mfcentral camsonline kfintech nsdl cdsl binance coinbase wazirx coindcx kraken crypto tax incometax efiling ' +
+      'gst epfo uidai aadhaar passport passportindia digilocker gov nic irs hmrc ssa health hospital clinic medical chase wellsfargo bankofamerica citi citibank ' +
+      'hsbc barclays santander americanexpress amex discover capitalone schwab fidelity vanguard robinhood etrade accounts account myaccount login signin auth sso security')
+      .split(' '),
+  );
+  const sensitiveSite = (host) =>
+    String(host || '')
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .split(/[/?#:]/)[0]
+      .split(/[.-]/)
+      .some((l) => SENSITIVE_LABELS.has(l));
+  let askMode = 'sensitive';
+  chrome.storage.local.get('va.ask').then((r) => (askMode = r['va.ask'] === 'always' ? 'always' : 'sensitive')).catch(() => {});
+  chrome.storage.onChanged.addListener((ch, area) => area === 'local' && ch['va.ask'] && (askMode = ch['va.ask'].newValue === 'always' ? 'always' : 'sensitive'));
+  globalThis.__vaSensitiveSite = sensitiveSite;
+  // Whether to ask before using sites (e.g. a library flow that types): only for sensitive ones, unless set to always.
+  globalThis.__vaAskBefore = (sites) => askMode === 'always' || [].concat(sites || []).some(sensitiveSite);
+  // The page layer's question before a submit, upload or delete: {decision: 'run' | 'ask'}. A rule the user set for
+  // the site (always allow / always ask) wins.
+  globalThis.__vaDecideWrite = (t, base) => {
+    if (!base || base.decision === 'run' || base.by === 'site-rule' || askMode === 'always' || !t || !t.site) return base;
+    if (t.category === 'delete') return base;
+    if (sensitiveSite(t.site)) return { ...base, by: 'sensitive-site' };
+    console.info('[va] went ahead without asking:', t.category, 'on', t.site);
+    return { decision: 'run', by: 'auto', canRemember: true };
+  };
+
   // The tabs each conversation works in (the same tabs that get the glowing border), so the page popup knows when
   // it is on a tab the agent is driving and must not cover what the agent clicks.
   let scopeWrite = Promise.resolve();

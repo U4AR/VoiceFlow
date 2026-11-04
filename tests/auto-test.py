@@ -54,7 +54,7 @@ try:
         pg.fill('input[type=password]', KEY); pg.click('text=Connect securely'); pg.wait_for_timeout(4000)
     pg.close()
     sw.evaluate("chrome.storage.local.get('nb.settings').then(r=>chrome.storage.local.set({'nb.settings':{...r['nb.settings'],turnCap:80,defaultMode:'auto'}}))")
-    sw.evaluate("chrome.storage.local.set({'va.flows.repo':'http://127.0.0.1:8787','va.flows.author':'auto-test','va.memory.mode':'off'})"); time.sleep(1)
+    sw.evaluate("chrome.storage.local.set({'va.flows.repo':'http://127.0.0.1:8787','va.flows.author':'auto-test','va.memory.mode':'off','va.ask':'always'})"); time.sleep(1)  # 'always': library flows that use AI ask first (the default asks only on sensitive sites)
     web = ctx.new_page(); web.set_viewport_size({'width': 1280, 'height': 900}); web.goto('https://www.youtube.com/'); web.wait_for_timeout(1500); web.bring_to_front()
     webtab = sw.evaluate("chrome.tabs.query({}).then(ts=>ts.find(t=>t.url.startsWith('https://www.youtube.com/')).id)")
     tasks = ctx.new_page(); tasks.set_viewport_size({'width': 900, 'height': 1500}); tasks.goto(f'chrome-extension://{ext}/tasks.html'); tasks.wait_for_timeout(800)

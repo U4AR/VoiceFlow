@@ -159,15 +159,17 @@ try:
     r = tool('find_flows', {'query': 'amazon best headphones'})
     v = json.loads(r['text'])
     check('find_flows finds library flows it does not have', any(x['id'] == 'amazon-best-pick' for x in v.get('library', [])), r['text'][:500])
+    sw.evaluate("chrome.storage.local.set({'va.ask':'always'})"); time.sleep(0.5)  # the default asks only on sensitive sites
     sw.evaluate("([c,n,a])=>{globalThis.__vaFlowTools.run(c,n,a).then(r=>globalThis.__tr=r);return 1}", ['test-conv', 'run_flow', {'id': 'amazon-best-pick', 'input': {'query': 'headphones', 'maxPrice': 3000}}])
     p = answer_next('yes')
+    sw.evaluate("chrome.storage.local.set({'va.ask':'sensitive'})")
     r = None
     for _ in range(80):
         r = sw.evaluate("globalThis.__tr||null")
         if r: break
         time.sleep(0.25)
     sw.evaluate("globalThis.__tr=null")
-    check('a library flow that uses AI asks before its first run, then runs (with its inner library flow)', p and 'online library' in p['data']['title'] and r and not r['isError'] and 'JBL' in r['text'], [p, r and r['text'][:400]])
+    check('with "ask on every site", a library flow that uses AI asks before its first run, then runs (with its inner library flow)', p and 'online library' in p['data']['title'] and r and not r['isError'] and 'JBL' in r['text'], [p, r and r['text'][:400]])
     r = tool('run_flow', {'id': 'youtube-search', 'input': {'query': 'flutter'}})
     check('a read-only library flow runs without asking', not r['isError'] and 'Kerala backwaters in 4K' in r['text'], r['text'][:300])
     time.sleep(1.5)

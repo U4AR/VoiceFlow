@@ -84,17 +84,25 @@
   <h2>Views</h2>
   <p class="sub" style="margin-bottom:10px">Pages the agent made to show results (ask it, for example, “show my YouTube feed as cards”). Views that come from a flow refresh each time you open them.</p>
   <div id="views"></div>
+  <h2>Asking before acting</h2>
+  <div class="card" style="display:grid;gap:10px">
+    <label class="row"><span><strong>Ask me before the agent submits or uploads</strong></span>
+      <select id="askMode" style="font:inherit;padding:6px 8px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);color:var(--ink)">
+        <option value="sensitive">Only on banking and other sensitive sites</option><option value="always">On every site</option></select></label>
+    <p class="meta" style="margin:0">Sensitive sites: banks, payments, investing, insurance, tax, government, health, and sign-in or account pages. The agent always asks before deleting. Typing a password, card number or one-time code, paying, and granting access are always left to you.</p>
+    <label class="row"><input type="checkbox" id="flowEarly"> <span><strong>Start a matching flow as soon as I speak</strong><br><span class="meta">When a saved flow does the request (for example “ask ChatGPT …”), it starts right away while the agent gets ready, instead of after the agent's first step.</span></span></label>
+  </div>
   <h2>Memory</h2>
   <div class="card" style="display:grid;gap:10px">
     <label class="row"><span><strong>Remember facts about me</strong></span>
       <select id="memMode" style="font:inherit;padding:6px 8px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);color:var(--ink)">
-        <option value="ask">Ask me first</option><option value="auto">Automatically</option><option value="off">Off</option></select></label>
+        <option value="auto">Automatically</option><option value="ask">Ask me first</option><option value="off">Off</option></select></label>
     <p class="meta" style="margin:0">The agent saves short facts you tell it or that a task shows (your city, which shops you use…) and uses them in later tasks instead of asking again. Passwords, codes and card or ID numbers are never saved.</p>
     <form id="memAdd" class="row" style="flex-wrap:nowrap"><input type="text" id="memFact" placeholder="Add something it should know, e.g. I live in Thrissur" maxlength="200"><button>Add</button></form>
     <div id="memList"></div>
   </div>
   <h2>Flows</h2>
-  <p class="sub" style="margin-bottom:10px">Saved, tested functions your agent runs in one step (for example “read my Gmail results”). The agent writes them when you ask (or after “Automate it”); flows from the online library are used only after you approve them.</p>
+  <p class="sub" style="margin-bottom:10px">Saved, tested functions your agent runs in one step (for example “read my Gmail results”). The agent writes them when you ask (or after “Automate it”); flows from the online library that type on sensitive sites are used only after you approve them.</p>
   <div id="flows"></div>
   <details class="card" style="margin-top:8px"><summary><strong>Online flow library</strong> <span class="meta" id="repoState"></span></summary>
     <div style="display:grid;gap:10px;margin-top:10px">

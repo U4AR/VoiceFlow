@@ -645,9 +645,16 @@
         }
         case 'wait': {
           const until = Date.now() + (s.timeout || 15000);
+          const started = Date.now();
+          let revealed = false;
           let last = null;
           let since = Date.now();
           for (;;) {
+            // Some sites do not finish drawing in a tab nobody looks at: after 6 s, the runner may bring it forward.
+            if (!revealed && !s.gone && Date.now() - started > 6000 && adapters.reveal) {
+              revealed = true;
+              await adapters.reveal(tab);
+            }
             const r = await adapters.page(tab, { ...render(s, scope), __risky: RISKY.source });
             if (s.stable) {
               // Settled: the text has not changed for "stable" ms (a streaming answer has finished).
