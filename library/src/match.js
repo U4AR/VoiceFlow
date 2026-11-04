@@ -11,7 +11,7 @@
 export const MODEL = '@cf/baai/bge-m3';
 const HASH_DIM = 256;
 const STOP = new Set(
-  'a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go what which who how when where about any some all'.split(' '),
+  'a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go today now current currently what which who how when where about any some all'.split(' '),
 );
 
 export const tokens = (s) =>
@@ -121,10 +121,10 @@ async function index(env) {
     }
   }
   // Names of sites and products (youtube, chatgpt, gmail, flipkart …): a task naming one is almost always about it.
-  const brands = new Set();
-  for (const r of rows)
-    for (const host of JSON.parse(r.sites || '[]')) for (const label of String(host).toLowerCase().split('.')) if (label.length > 2 && !['www', 'com', 'org', 'net', 'co', 'in', 'mail', 'news', 'html', 'en', 'app'].includes(label)) brands.add(SAME[label] || label);
-  brands.add('gmail');
+  // Each flow owns the brands of its own sites (a Gmail flow owns "gmail", not "google").
+  const owns = new Map();
+  for (const r of rows) owns.set(r.id, brandsOf(JSON.parse(r.sites || '[]')));
+  const brands = new Set([...owns.values()].flatMap((b) => [...b]));
   // Word rarity across flows (idf).
   const df = new Map();
   const toks = new Map();
@@ -133,10 +133,36 @@ async function index(env) {
     toks.set(r.id, set);
     for (const t of set) df.set(t, (df.get(t) || 0) + 1);
   }
-  cache = { kind, at: Date.now(), rows, vecs, ex, df, toks, brands, n: rows.length };
+  cache = { kind, at: Date.now(), rows, vecs, ex, df, toks, brands, owns, n: rows.length };
   return cache;
 }
 export const forget = () => (cache = null);
+// Things a task can ask for that flows never do on their own (they stop before paying, sending, posting or deleting).
+const DEEDS = new Set(['book', 'buy', 'order', 'pay', 'purchase', 'send', 'post', 'delete', 'cancel', 'reserve', 'apply', 'register', 'subscribe', 'transfer', 'checkout', 'reply', 'forward', 'tweet', 'upload', 'sell']);
+// The brand a site stands for: its main name (youtube.com → youtube), or the product for a few well-known subdomains
+// (mail.google.com → gmail); other subdomains of a big site (news.google.com) stand for no brand of their own.
+const PRODUCT = { 'mail.google.com': 'gmail' };
+const GENERIC = new Set(['www', 'com', 'org', 'net', 'co', 'in', 'html', 'en', 'app', 'gov', 'edu', 'ac', 'io', 'ai', 'm']);
+export function brandsOf(sites) {
+  const out = new Set();
+  for (const s of sites || []) {
+    const host = String(s).toLowerCase().replace(/^www\./, '');
+    if (PRODUCT[host]) {
+      out.add(PRODUCT[host]);
+      continue;
+    }
+    const labels = host.split('.').filter((l) => !GENERIC.has(l));
+    if (!labels.length) continue;
+    if (labels.length > 1) continue; // a subdomain of another site (news.google.com, html.duckduckgo.com is handled below)
+    if (labels[0].length > 2) out.add(SAME[labels[0]] || labels[0]);
+  }
+  // html.duckduckgo.com and the like: a subdomain that is only a variant of the site keeps the site's name.
+  for (const s of sites || []) {
+    const m = /^(?:html|m|mobile|en|web)\.([a-z0-9-]+)\.[a-z.]+$/.exec(String(s).toLowerCase());
+    if (m) out.add(SAME[m[1]] || m[1]);
+  }
+  return out;
+}
 
 const hostOf = (s) => String(s || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0];
 const onSite = (host, sites) => !!host && sites.some((s) => host === s || host.endsWith('.' + s) || s.endsWith('.' + host));
@@ -147,9 +173,13 @@ export async function rank(env, task, site, limit = 5) {
   if (!ix.rows.length) return [];
   const q = [...new Set(tokens(task))];
   // Words no flow uses cannot tell flows apart (they are often the question itself): they count only a little.
-  const idf = (t) => (!ix.df.get(t) ? 0.5 : Math.log(1 + ix.n / (1 + ix.df.get(t))) * (ix.brands.has(t) ? 3 : 1));
+  const base = (t) => (!ix.df.get(t) ? 0.5 : Math.log(1 + ix.n / (1 + ix.df.get(t))));
+  // A brand word weighs 3 times as much, for the flows of that brand.
+  const idf = (t, own) => base(t) * (ix.brands.has(t) && (!own || own.has(t)) ? 3 : 1);
   const qWeight = q.reduce((a, t) => a + idf(t), 0) || 1;
-  const named = q.some((t) => ix.brands.has(t)); // the task names a site or product
+  const namedBrands = q.filter((t) => ix.brands.has(t));
+  const acts = q.filter((t) => DEEDS.has(t));
+  const named = namedBrands.length > 0; // the task names a site or product
   const host = hostOf(site);
   const qv = ix.kind ? (await embed(env, [task]).catch(() => null))?.[0] : null;
   const low = Number(env.MATCH_LOW) || 0.42;
@@ -158,7 +188,8 @@ export async function rank(env, task, site, limit = 5) {
   for (const r of ix.rows) {
     const set = ix.toks.get(r.id);
     const hit = q.filter((t) => set.has(t));
-    const words = hit.reduce((a, t) => a + idf(t), 0) / qWeight;
+    const own = ix.owns.get(r.id) || new Set();
+    const words = hit.reduce((a, t) => a + idf(t, own), 0) / qWeight;
     let meaning = 0;
     let example = '';
     if (qv) {
@@ -176,9 +207,14 @@ export async function rank(env, task, site, limit = 5) {
     const m = ix.kind === 'ai' ? Math.max(0, (meaning - low) / span) : meaning;
     // ...but only for a flow the task has something to do with (on youtube.com, "turn off the lights" is no YouTube task).
     const here = onSite(host, sites) && (hit.length || m > 0.05) ? (named ? 0.05 : 0.25) : 0;
-    const score = (qv ? 0.6 * Math.min(1, m) + 0.4 * words : words) + here + reliable;
+    // A task that names a site ("ask Claude …", "search Google for …") is about that site: other flows count half.
+    const offBrand = named && !namedBrands.some((t) => own.has(t)) ? 0.5 : 1;
+    // Flows never book, pay, order, send or delete: a task that asks for that is not done by a flow that only looks
+    // things up ("book a train ticket" is not "train running status"), unless the flow says it does it.
+    const deed = acts.length && !acts.some((t) => set.has(t)) ? 0.5 : 1;
+    const score = ((qv ? 0.6 * Math.min(1, m) + 0.4 * words : words) + here) * offBrand * deed + reliable;
     // It names a site or product that only one or two flows are about ("chatgpt", "irctc").
-    const rare = hit.some((t) => ix.brands.has(t) && (ix.df.get(t) || 0) <= 2);
+    const rare = hit.some((t) => own.has(t) && (ix.df.get(t) || 0) <= 2);
     out.push({ row: r, score: +score.toFixed(3), words: +words.toFixed(3), meaning: +meaning.toFixed(3), example, hits: hit, rare });
   }
   out.sort((a, b) => b.score - a.score);

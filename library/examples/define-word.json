@@ -1,0 +1,59 @@
+{
+ "id": "define-word",
+ "name": "Define a word",
+ "description": "Look up an English word in the Merriam-Webster dictionary: part of speech, pronunciation and its definitions.",
+ "sites": [
+  "merriam-webster.com"
+ ],
+ "tags": [
+  "dictionary",
+  "define",
+  "meaning",
+  "definition",
+  "word",
+  "english"
+ ],
+ "model": "none",
+ "inputs": {
+  "word": {
+   "type": "string",
+   "required": true,
+   "description": "the word to look up"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.merriam-webster.com/dictionary/{{word}}"
+  },
+  {
+   "do": "wait",
+   "for": "span.dtText, .spelling-suggestions, h1",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "partOfSpeech",
+   "sel": "h2.parts-of-speech, .parts-of-speech"
+  },
+  {
+   "do": "extract",
+   "as": "pronunciation",
+   "sel": ".prons-entries-list-inline a, .play-pron-v2"
+  },
+  {
+   "do": "extract",
+   "as": "definitions",
+   "sel": "div[id^=\"dictionary-entry-\"] span.dtText",
+   "all": true,
+   "limit": 6
+  }
+ ],
+ "output": {
+  "word": "{{word}}",
+  "partOfSpeech": "{{partOfSpeech}}",
+  "pronunciation": "{{pronunciation}}",
+  "definitions": "{{definitions}}"
+ },
+ "notes": "Checked on merriam-webster.com (Nov 2026): definitions are span.dtText inside div#dictionary-entry-1…; a misspelt word shows suggestions and no definitions."
+}

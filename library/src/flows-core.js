@@ -594,6 +594,7 @@
       args[k] = x;
     }
     const scope = { ...args, input: args };
+    const keep = !!((input && input.keepOpen) || args.keepOpen === true);
     const tab = { id: null, created: false, sites: (flow.sites || []).map((x) => String(x).toLowerCase().replace(/^www\./, '')) };
     const log = [];
     let last;
@@ -788,10 +789,12 @@
     try {
       await doSteps(flow.steps, 'step');
     } finally {
-      if (tab.id && !(input && input.keepOpen)) await adapters.close(tab).catch(() => {});
+      // The tab stays open when asked (keepOpen in the input, or a keepOpen input that defaults to true, as in a flow
+      // that starts a video).
+      if (tab.id && !keep) await adapters.close(tab).catch(() => {});
     }
     let output = returned !== undefined ? returned : flow.output !== undefined ? render(flow.output, scope) : last;
-    return { output, log, ms: Date.now() - t0, tabId: input && input.keepOpen ? tab.id : undefined };
+    return { output, log, ms: Date.now() - t0, tabId: keep ? tab.id : undefined };
   }
   function compare(a, op, b) {
     const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[,\s]/g, '').replace(/^[^\d.-]+/, '')));

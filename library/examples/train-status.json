@@ -1,0 +1,55 @@
+{
+ "id": "train-status",
+ "name": "Train running status (India)",
+ "description": "Live running status of an Indian Railways train from RailYatri: each station with its times, platform and delay, and where the train is now.",
+ "sites": [
+  "railyatri.in"
+ ],
+ "tags": [
+  "train",
+  "railway",
+  "running status",
+  "live status",
+  "where is my train",
+  "indian railways",
+  "delay"
+ ],
+ "model": "none",
+ "inputs": {
+  "number": {
+   "type": "string",
+   "required": true,
+   "description": "the 5-digit train number, e.g. 16301"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.railyatri.in/live-train-status/{{number}}"
+  },
+  {
+   "do": "wait",
+   "for": "h1",
+   "timeout": 15000
+  },
+  {
+   "do": "sleep",
+   "ms": 1500
+  },
+  {
+   "do": "extract",
+   "as": "train",
+   "sel": "h1"
+  },
+  {
+   "do": "read",
+   "as": "status",
+   "max": 3500
+  }
+ ],
+ "output": {
+  "train": "{{train}}",
+  "status": "{{status}}"
+ },
+ "notes": "Checked on railyatri.in (Nov 2026): the page lists each station (code, times, distance, platform, delay); 'Departed at …' and 'Reached at …' mark progress. Returned as text."
+}

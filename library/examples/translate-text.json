@@ -1,0 +1,60 @@
+{
+ "id": "translate-text",
+ "name": "Translate text",
+ "description": "Translate text into another language with Google Translate; returns the translation and how to read it in Latin letters.",
+ "sites": [
+  "translate.google.com"
+ ],
+ "tags": [
+  "translate",
+  "translation",
+  "language",
+  "google translate",
+  "malayalam",
+  "hindi"
+ ],
+ "model": "none",
+ "inputs": {
+  "text": {
+   "type": "string",
+   "required": true,
+   "description": "the text to translate"
+  },
+  "to": {
+   "type": "string",
+   "default": "en",
+   "description": "target language code: en English, ml Malayalam, hi Hindi, ta Tamil, ar Arabic, fr French, de German, es Spanish, ja Japanese, zh-CN Chinese"
+  },
+  "from": {
+   "type": "string",
+   "default": "auto",
+   "description": "source language code, or auto"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://translate.google.com/?sl={{from}}&tl={{to}}&text={{text}}&op=translate"
+  },
+  {
+   "do": "wait",
+   "for": "span[jsname=\"W297wb\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "translation",
+   "sel": "span[jsname=\"jqKxS\"], span.HwtZe"
+  },
+  {
+   "do": "extract",
+   "as": "reading",
+   "sel": "span[jsname=\"toZopb\"]"
+  }
+ ],
+ "output": {
+  "translation": "{{translation}}",
+  "reading": "{{reading}}"
+ },
+ "notes": "Checked on translate.google.com (Nov 2026): the translation is span[jsname=jqKxS] (sentences in span[jsname=W297wb]); the Latin-letter reading is span[jsname=toZopb]. The page only draws the result in a visible tab: the runner brings it forward if it waits too long."
+}

@@ -1,0 +1,59 @@
+{
+ "id": "fuel-price",
+ "name": "Petrol and diesel price",
+ "description": "Today's petrol and diesel price per litre in an Indian city, from Goodreturns.",
+ "sites": [
+  "goodreturns.in"
+ ],
+ "tags": [
+  "petrol",
+  "diesel",
+  "fuel",
+  "price",
+  "india",
+  "city"
+ ],
+ "model": "none",
+ "inputs": {
+  "city": {
+   "type": "string",
+   "required": true,
+   "description": "Indian city in lower case with dashes, e.g. thrissur, kochi, chennai, bangalore, new-delhi"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.goodreturns.in/petrol-price-in-{{city}}.html"
+  },
+  {
+   "do": "wait",
+   "for": "h1",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "petrol",
+   "sel": "title"
+  },
+  {
+   "do": "open",
+   "url": "https://www.goodreturns.in/diesel-price-in-{{city}}.html"
+  },
+  {
+   "do": "wait",
+   "for": "h1",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "diesel",
+   "sel": "title"
+  }
+ ],
+ "output": {
+  "petrol": "{{petrol}}",
+  "diesel": "{{diesel}}"
+ },
+ "notes": "Checked on goodreturns.in (Nov 2026): the page title carries today's price, e.g. 'Petrol Price in Thrissur, Petrol Rate Today (4th Nov, 2026), Rs. 114.62/Ltr'."
+}

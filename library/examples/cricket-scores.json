@@ -1,0 +1,68 @@
+{
+ "id": "cricket-scores",
+ "name": "Cricket scores",
+ "description": "Live and recent cricket scores from ESPNcricinfo: each match's status, teams, scores and result, optionally only matches of one team or series.",
+ "sites": [
+  "espncricinfo.com",
+  "cricinfo.com"
+ ],
+ "tags": [
+  "cricket",
+  "score",
+  "live score",
+  "match",
+  "india",
+  "ipl",
+  "test",
+  "odi",
+  "t20"
+ ],
+ "model": "none",
+ "inputs": {
+  "team": {
+   "type": "string",
+   "description": "only matches mentioning this team or series, e.g. India, Kerala, IPL (leave out for all)"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.espncricinfo.com/live-cricket-score"
+  },
+  {
+   "do": "wait",
+   "for": "a[href*=\"/series/\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "matches",
+   "items": "div.ds-px-4.ds-py-3:has(> a[href*=\"/series/\"])",
+   "limit": 30,
+   "fields": {
+    "match": ":scope > a",
+    "link": {
+     "sel": ":scope > a",
+     "attr": "url"
+    }
+   }
+  },
+  {
+   "do": "filter",
+   "if": "{{team}}",
+   "in": "{{matches}}",
+   "field": "match",
+   "op": "contains",
+   "value": "{{team}}",
+   "as": "matches"
+  },
+  {
+   "do": "take",
+   "in": "{{matches}}",
+   "n": 12,
+   "as": "matches"
+  }
+ ],
+ "output": "{{matches}}",
+ "notes": "Checked on espncricinfo.com (Nov 2026; it may move to cricinfo.com): each match is a card whose link text reads 'RESULT 1st ODI … NZ 185 IND 143/5 India won by 5 wickets'."
+}

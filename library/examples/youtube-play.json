@@ -1,0 +1,100 @@
+{
+ "id": "youtube-play",
+ "name": "Play a YouTube video",
+ "description": "Find a video on YouTube and start playing it (the first result for the search); returns its title, channel and link. The tab stays open.",
+ "sites": [
+  "youtube.com"
+ ],
+ "tags": [
+  "youtube",
+  "play",
+  "music",
+  "song",
+  "video",
+  "watch"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to play, e.g. a song, an artist or a video name"
+  },
+  "keepOpen": {
+   "type": "boolean",
+   "default": true,
+   "description": "leave the video playing (true)"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.youtube.com/results?search_query={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "ytd-video-renderer a#video-title, ytd-item-section-renderer yt-lockup-view-model a[href*=\"/watch\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "click",
+   "sel": "ytd-video-renderer a#video-title, ytd-item-section-renderer yt-lockup-view-model a[href*=\"/watch\"]"
+  },
+  {
+   "do": "wait",
+   "for": "ytd-watch-metadata h1, h1.ytd-watch-metadata",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "state",
+   "sel": "button.ytp-play-button",
+   "attr": "data-title-no-tooltip"
+  },
+  {
+   "do": "set",
+   "value": [
+    {
+     "s": "{{state}}"
+    }
+   ],
+   "as": "st"
+  },
+  {
+   "do": "filter",
+   "in": "{{st}}",
+   "field": "s",
+   "op": "equals",
+   "value": "Play",
+   "as": "paused"
+  },
+  {
+   "do": "click",
+   "if": "{{paused}}",
+   "sel": "button.ytp-play-button",
+   "optional": true
+  },
+  {
+   "do": "extract",
+   "as": "title",
+   "sel": "ytd-watch-metadata h1, h1.ytd-watch-metadata"
+  },
+  {
+   "do": "extract",
+   "as": "channel",
+   "sel": "ytd-watch-metadata ytd-channel-name a, #owner ytd-channel-name a"
+  },
+  {
+   "do": "extract",
+   "as": "link",
+   "sel": ":root",
+   "attr": "location"
+  }
+ ],
+ "output": {
+  "title": "{{title}}",
+  "channel": "{{channel}}",
+  "link": "{{link}}"
+ },
+ "notes": "Checked on youtube.com (Nov 2026): clicks the first search result; if the player still shows Play (the browser held back autoplay), it presses play once. An ad may play first."
+}

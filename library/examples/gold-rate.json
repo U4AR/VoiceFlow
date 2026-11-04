@@ -1,0 +1,79 @@
+{
+ "id": "gold-rate",
+ "name": "Gold rate today",
+ "description": "Today's gold rate per gram (24K, 22K, 18K) and the change since yesterday, in an Indian city or for India, from Goodreturns.",
+ "sites": [
+  "goodreturns.in"
+ ],
+ "tags": [
+  "gold",
+  "gold rate",
+  "gold price",
+  "22k",
+  "24k",
+  "pavan",
+  "sovereign",
+  "india"
+ ],
+ "model": "none",
+ "inputs": {
+  "city": {
+   "type": "string",
+   "description": "Indian city in lower case with dashes, e.g. kochi, thrissur, chennai, bangalore, mumbai, delhi (leave out for India)"
+  }
+ },
+ "steps": [
+  {
+   "do": "set",
+   "value": [
+    {
+     "v": "{{city}}"
+    }
+   ],
+   "as": "given"
+  },
+  {
+   "do": "filter",
+   "in": "{{given}}",
+   "field": "v",
+   "op": "equals",
+   "value": "",
+   "as": "none"
+  },
+  {
+   "do": "open",
+   "if": "{{city}}",
+   "url": "https://www.goodreturns.in/gold-rates/{{city}}.html"
+  },
+  {
+   "do": "open",
+   "if": "{{none}}",
+   "url": "https://www.goodreturns.in/gold-rates/"
+  },
+  {
+   "do": "wait",
+   "for": "div.gr-price-card",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "page",
+   "sel": "title"
+  },
+  {
+   "do": "extract",
+   "as": "rates",
+   "items": "div.gr-price-card.gold-each-container",
+   "limit": 3,
+   "fields": {
+    "purity": ".gr-price-card-label",
+    "price": ".gr-price-card-row"
+   }
+  }
+ ],
+ "output": {
+  "page": "{{page}}",
+  "rates": "{{rates}}"
+ },
+ "notes": "Checked on goodreturns.in (Nov 2026): three cards (24K, 22K, 18K per gram, with the change). 1 pavan = 8 grams. The page title has the date."
+}

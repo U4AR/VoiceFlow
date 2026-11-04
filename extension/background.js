@@ -830,6 +830,7 @@
       args[k] = x;
     }
     const scope = { ...args, input: args };
+    const keep = !!((input && input.keepOpen) || args.keepOpen === true);
     const tab = { id: null, created: false, sites: (flow.sites || []).map((x) => String(x).toLowerCase().replace(/^www\./, '')) };
     const log = [];
     let last;
@@ -1024,10 +1025,12 @@
     try {
       await doSteps(flow.steps, 'step');
     } finally {
-      if (tab.id && !(input && input.keepOpen)) await adapters.close(tab).catch(() => {});
+      // The tab stays open when asked (keepOpen in the input, or a keepOpen input that defaults to true, as in a flow
+      // that starts a video).
+      if (tab.id && !keep) await adapters.close(tab).catch(() => {});
     }
     let output = returned !== undefined ? returned : flow.output !== undefined ? render(flow.output, scope) : last;
-    return { output, log, ms: Date.now() - t0, tabId: input && input.keepOpen ? tab.id : undefined };
+    return { output, log, ms: Date.now() - t0, tabId: keep ? tab.id : undefined };
   }
   function compare(a, op, b) {
     const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[,\s]/g, '').replace(/^[^\d.-]+/, '')));
@@ -2690,14 +2693,25 @@
   // Saved flows are matched here by their words; the online library answers by words and meaning (/api/resolve).
   // The best match goes into the agent's instructions, so a fitting flow is run at the first step; when nothing fits
   // the agent is told so and works the site out itself (and the task may later become a flow, see va-more-bg.js).
-  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go what which who how when where about any some all'.split(' '));
+  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go today now current currently what which who how when where about any some all'.split(' '));
   const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', headline: 'news', story: 'news', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt', rupee: 'currency', dollar: 'currency', euro: 'currency', yen: 'currency', pound: 'currency', usd: 'currency', inr: 'currency', eur: 'currency', gbp: 'currency', exchange: 'currency', forex: 'currency', rain: 'weather', raining: 'weather', forecast: 'weather', temperature: 'weather', humid: 'weather', humidity: 'weather', sunny: 'weather', paper: 'paper', papers: 'paper', };
   const stem = (w) => (!/^[a-z]+$/.test(w) || w.length < 5 ? w : w.replace(/(ings|ing|ers|er|ies|es|ed|s)$/, (m) => (m === 'ies' ? 'y' : '')));
   const toks = (x) => String(x || '').toLowerCase().normalize('NFKC').split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 1 && !STOP.has(w)).map(stem).map((w) => SAME[w] || w);
+  // The brands a flow owns: its sites' main names (youtube.com → youtube; mail.google.com → gmail; a subdomain of a
+  // big site such as news.google.com owns none). Same rules as the online library (library/src/match.js).
+  const DEEDS = new Set(['book', 'buy', 'order', 'pay', 'purchase', 'send', 'post', 'delete', 'cancel', 'reserve', 'apply', 'register', 'subscribe', 'transfer', 'checkout', 'reply', 'forward', 'tweet', 'upload', 'sell']);
+  const GENERIC = new Set(['www', 'com', 'org', 'net', 'co', 'in', 'html', 'en', 'app', 'gov', 'edu', 'ac', 'io', 'ai', 'm']);
   const brandsOf = (flow) => {
     const out = new Set();
-    for (const h of flow.sites || []) for (const l of String(h).toLowerCase().split('.')) if (l.length > 2 && !['www', 'com', 'org', 'net', 'co', 'in', 'mail', 'news', 'html', 'en', 'app'].includes(l)) out.add(SAME[l] || l);
-    if ((flow.sites || []).some((h) => /mail\.google/.test(h))) out.add('gmail');
+    for (const s of flow.sites || []) {
+      const host = String(s).toLowerCase().replace(/^www\./, '');
+      if (host === 'mail.google.com') {
+        out.add('gmail');
+        continue;
+      }
+      const labels = host.split('.').filter((l) => !GENERIC.has(l));
+      if (labels.length === 1 && labels[0].length > 2) out.add(SAME[labels[0]] || labels[0]);
+    }
     return out;
   };
   function localRank(text, host) {
@@ -2705,18 +2719,26 @@
     if (!recs.length) return [];
     const q = [...new Set(toks(text))];
     const sets = recs.map((r) => new Set([...toks([r.flow.id.replace(/-/g, ' '), r.flow.name, r.flow.description, (r.flow.tags || []).join(' '), (r.flow.sites || []).join(' ')].join(' ')), ...(r.examples || []).flatMap(toks)]));
-    const brands = new Set(recs.flatMap((r) => [...brandsOf(r.flow)]));
+    const owns = recs.map((r) => brandsOf(r.flow));
+    const brands = new Set(owns.flatMap((b) => [...b]));
     const df = new Map();
     for (const st of sets) for (const t of st) df.set(t, (df.get(t) || 0) + 1);
-    const idf = (t) => (!df.get(t) ? 0.5 : Math.log(1 + recs.length / (1 + df.get(t))) * (brands.has(t) ? 3 : 1));
+    const idf = (t, own) => (!df.get(t) ? 0.5 : Math.log(1 + recs.length / (1 + df.get(t))) * (brands.has(t) && (!own || own.has(t)) ? 3 : 1));
     const total = q.reduce((a, t) => a + idf(t), 0) || 1;
-    const named = q.some((t) => brands.has(t));
+    const namedBrands = q.filter((t) => brands.has(t));
+    const named = namedBrands.length > 0;
+    const acts = q.filter((t) => DEEDS.has(t));
     return recs
       .map((r, i) => {
         const hit = q.filter((t) => sets[i].has(t));
+        const own = owns[i];
         const here = host && hit.length && (r.flow.sites || []).some((x) => F.hostIn(host, String(x).replace(/^www\./, ''))) ? (named ? 0.05 : 0.25) : 0;
-        const rare = hit.some((t) => brands.has(t) && (df.get(t) || 0) <= 2);
-        return { rec: r, score: hit.reduce((a, t) => a + idf(t), 0) / total + here, hits: hit, rare };
+        const rare = hit.some((t) => own.has(t) && (df.get(t) || 0) <= 2);
+        // A request that names a site is about that site: other flows count half. Flows never book, pay, order, send
+        // or delete, so a request for that is not done by a flow that only looks things up.
+        const offBrand = named && !namedBrands.some((t) => own.has(t)) ? 0.5 : 1;
+        const deed = acts.length && !acts.some((t) => sets[i].has(t)) ? 0.5 : 1;
+        return { rec: r, score: (hit.reduce((a, t) => a + idf(t, own), 0) / total + here) * offBrand * deed, hits: hit, rare };
       })
       .sort((a, b) => b.score - a.score);
   }

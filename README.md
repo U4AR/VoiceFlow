@@ -6,7 +6,7 @@ A voice-driven browser agent (Edge/Chrome extension) that turns repeatable brows
 |---|---|
 | `extension/` | The extension, ready to load unpacked (Nanobrowser fork plus the Voice Agent add-ons) |
 | `extension/mcp/` | `voice-agent-mcp.mjs`, a local MCP server that exposes every saved flow as a tool to Claude Code, Claude Desktop or any MCP app |
-| `library/` | The online flow library: a Cloudflare Worker with a D1 database, a browse page and 22 starter flows. Live at https://voice-agent-flows.unity4ar.workers.dev |
+| `library/` | The online flow library: a Cloudflare Worker with a D1 database, a browse page and 36 starter flows. Live at https://voice-agent-flows.unity4ar.workers.dev |
 | `src/` | How `extension/background.js` is built from the add-on files |
 | `tests/` | End-to-end tests (real extension, site replicas, MCP SDK client, Claude Code) |
 

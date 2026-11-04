@@ -86,7 +86,7 @@ async function search(env, url) {
 async function publish(env, req, ip) {
   const token = req.headers.get('x-contributor') || '';
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(token)) return bad('send an x-contributor header: a random string of 16 to 128 letters or digits that you keep (it marks the flows as yours)', 401);
-  if (!(await allow(env, 'pub:' + ip, 30)) || !(await allow(env, 'pubt:' + token.slice(0, 32), 30))) return bad('too many publishes this hour', 429);
+  if (!(await allow(env, 'pub:' + ip, 60)) || !(await allow(env, 'pubt:' + token.slice(0, 32), 60))) return bad('too many publishes this hour', 429);
   const text = await req.text();
   if (text.length > 40000) return bad('too large');
   let body;

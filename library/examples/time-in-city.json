@@ -1,0 +1,94 @@
+{
+ "id": "time-in-city",
+ "name": "Time in a city",
+ "description": "The current local time, date and time zone in any city, from timeanddate.com.",
+ "sites": [
+  "timeanddate.com"
+ ],
+ "tags": [
+  "time",
+  "clock",
+  "time zone",
+  "world clock",
+  "city",
+  "date"
+ ],
+ "model": "none",
+ "inputs": {
+  "city": {
+   "type": "string",
+   "required": true,
+   "description": "city name, e.g. London, New York, Dubai"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.timeanddate.com/worldclock/results.html?query={{city}}"
+  },
+  {
+   "do": "wait",
+   "for": "#ct, table tbody tr td a",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "direct",
+   "sel": "#ct"
+  },
+  {
+   "do": "set",
+   "value": [
+    {
+     "v": "{{direct}}"
+    }
+   ],
+   "as": "got"
+  },
+  {
+   "do": "filter",
+   "in": "{{got}}",
+   "field": "v",
+   "op": "equals",
+   "value": "",
+   "as": "pick"
+  },
+  {
+   "do": "click",
+   "if": "{{pick}}",
+   "sel": "table tbody tr td a"
+  },
+  {
+   "do": "wait",
+   "for": "#ct",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "place",
+   "sel": "h1"
+  },
+  {
+   "do": "extract",
+   "as": "time",
+   "sel": "#ct"
+  },
+  {
+   "do": "extract",
+   "as": "date",
+   "sel": "#ctdat"
+  },
+  {
+   "do": "extract",
+   "as": "zone",
+   "sel": "#cta"
+  }
+ ],
+ "output": {
+  "place": "{{place}}",
+  "time": "{{time}}",
+  "date": "{{date}}",
+  "zone": "{{zone}}"
+ },
+ "notes": "Checked on timeanddate.com (Nov 2026): a search with one match (Dubai) opens the place directly; otherwise the flow clicks the best match (first row). The place page has #ct (time), #ctdat (date), #cta (zone)."
+}

@@ -1,0 +1,66 @@
+{
+ "id": "github-repo",
+ "name": "GitHub repository info",
+ "description": "Facts about a GitHub repository: description, stars, watchers, forks, latest release and languages.",
+ "sites": [
+  "github.com"
+ ],
+ "tags": [
+  "github",
+  "repo",
+  "repository",
+  "stars",
+  "forks",
+  "code",
+  "open source"
+ ],
+ "model": "none",
+ "inputs": {
+  "owner": {
+   "type": "string",
+   "required": true,
+   "description": "the user or organization, e.g. facebook"
+  },
+  "repo": {
+   "type": "string",
+   "required": true,
+   "description": "the repository name, e.g. react"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://github.com/{{owner}}/{{repo}}"
+  },
+  {
+   "do": "wait",
+   "for": "[class*=\"insightItem\"], [class*=\"sidebarSection\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "about",
+   "sel": "[class*=\"SidebarAbout\"][class*=\"description\"]"
+  },
+  {
+   "do": "extract",
+   "as": "stats",
+   "sel": "[class*=\"insightItem\"]",
+   "all": true,
+   "limit": 3
+  },
+  {
+   "do": "extract",
+   "as": "sections",
+   "sel": "[class*=\"sidebarSection\"]",
+   "all": true,
+   "limit": 8
+  }
+ ],
+ "output": {
+  "about": "{{about}}",
+  "stats": "{{stats}}",
+  "sections": "{{sections}}"
+ },
+ "notes": "Checked on github.com (Nov 2026): the sidebar uses CSS-module classes (SidebarAbout-module_…), matched by their stable part; stats read '14.2k stars', '69 watching', '1.5k forks'; sections include Releases and Languages."
+}

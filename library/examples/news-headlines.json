@@ -1,0 +1,79 @@
+{
+ "id": "news-headlines",
+ "name": "News headlines",
+ "description": "Latest news headlines from Google News, on a topic or the top stories: title, source and how long ago.",
+ "sites": [
+  "news.google.com"
+ ],
+ "tags": [
+  "news",
+  "headlines",
+  "google news",
+  "latest",
+  "top stories",
+  "breaking news",
+  "current affairs",
+  "world",
+  "india",
+  "local news"
+ ],
+ "model": "none",
+ "inputs": {
+  "topic": {
+   "type": "string",
+   "description": "what the news should be about (leave out for the top stories)"
+  },
+  "edition": {
+   "type": "string",
+   "default": "IN:en",
+   "description": "Google News edition as COUNTRY:language, e.g. IN:en, US:en, IN:ml"
+  }
+ },
+ "steps": [
+  {
+   "do": "set",
+   "value": [
+    {
+     "v": "{{topic}}"
+    }
+   ],
+   "as": "given"
+  },
+  {
+   "do": "filter",
+   "in": "{{given}}",
+   "field": "v",
+   "op": "equals",
+   "value": "",
+   "as": "none"
+  },
+  {
+   "do": "open",
+   "if": "{{topic}}",
+   "url": "https://news.google.com/search?q={{topic}}&ceid={{edition}}"
+  },
+  {
+   "do": "open",
+   "if": "{{none}}",
+   "url": "https://news.google.com/home?ceid={{edition}}"
+  },
+  {
+   "do": "wait",
+   "for": "a.JtKRv, a.gPFEn",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "news",
+   "items": "div.IBr9hb, div.UwIKyb, div.IFHyqb:not(:has(div.IBr9hb, div.UwIKyb))",
+   "limit": 12,
+   "fields": {
+    "title": "a.JtKRv, a.gPFEn",
+    "source": ".vr1PYe",
+    "when": "time"
+   }
+  }
+ ],
+ "output": "{{news}}",
+ "notes": "Checked on news.google.com (Nov 2026): headline links are a.JtKRv (search) or a.gPFEn (home), the source .vr1PYe, the age a <time>."
+}

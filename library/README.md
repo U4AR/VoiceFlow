@@ -6,19 +6,22 @@ It is a Cloudflare Worker (the API), a static page (browse and search) and a D1 
 
 ## The live library
 
-**https://voice-agent-flows.unity4ar.workers.dev** is the default library for the extension. Its matching uses Workers AI, and it starts with 22 read-only starter flows:
+**https://voice-agent-flows.unity4ar.workers.dev** is the default library for the extension. Its matching uses Workers AI, and it starts with 36 starter flows. The 14 newest (Google search, news, translate, define, stocks, cricket, gold, fuel, IMDb, world time, GitHub repo, YouTube play, Maps places, train status) had their page selectors checked on the real sites in a normal browser in November 2026:
 
-| Site | Flows |
+| For | Flows |
 |---|---|
+| Search and answers | `google-search` (with Google's AI overview), `duckduckgo-search`, `wikipedia-summary`, `define-word`, `translate-text`, `topic-briefing` |
+| News | `news-headlines` (Google News, any topic or edition), `hackernews-top`, `morning-digest` |
 | Gmail | `gmail-search`, `gmail-read-mails`, `gmail-digest` |
-| YouTube | `youtube-search`, `youtube-feed`, `youtube-channel-videos` |
-| Amazon.in / Flipkart | `amazon-search`, `amazon-best-pick`, `flipkart-search`, `price-compare` |
-| ChatGPT / Claude | `ask-chatgpt`, `ask-claude` |
-| News and search | `hackernews-top`, `duckduckgo-search`, `wikipedia-summary`, `topic-briefing`, `morning-digest` |
-| Developers | `github-trending`, `pypi-search`, `arxiv-search` |
-| Everyday | `weather-now` (wttr.in), `currency-rate` |
+| YouTube | `youtube-play` (find and play), `youtube-search`, `youtube-feed`, `youtube-channel-videos` |
+| Shopping | `amazon-search`, `amazon-best-pick`, `flipkart-search`, `price-compare` |
+| Ask an AI | `ask-chatgpt`, `ask-claude` |
+| Places and travel | `places-nearby` (Google Maps), `train-status` (Indian Railways), `weather-now`, `time-in-city` |
+| Money | `stock-quote` (Google Finance), `gold-rate`, `fuel-price`, `currency-rate` |
+| Sports and films | `cricket-scores` (ESPNcricinfo), `movie-search` (IMDb) |
+| Developers | `github-repo`, `github-trending`, `pypi-search`, `arxiv-search` |
 
-You can point the extension at your own copy instead (Tasks page → Flows → Library address).
+Every flow is read-only except `youtube-play` and `time-in-city`, which click a search result. None of them pays, sends, posts or deletes. You can point the extension at your own copy of the library instead (Tasks page → Flows → Library address).
 
 ### Updating it without wrangler
 

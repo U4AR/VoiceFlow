@@ -1,0 +1,56 @@
+{
+ "id": "movie-search",
+ "name": "Find a movie or show (IMDb)",
+ "description": "Search IMDb for a movie or TV show: title, year, length, IMDb rating with the number of votes, and link.",
+ "sites": [
+  "imdb.com"
+ ],
+ "tags": [
+  "movie",
+  "film",
+  "imdb",
+  "rating",
+  "tv show",
+  "series",
+  "cinema"
+ ],
+ "model": "none",
+ "inputs": {
+  "title": {
+   "type": "string",
+   "required": true,
+   "description": "the movie or show name"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.imdb.com/find/?q={{title}}&s=tt"
+  },
+  {
+   "do": "wait",
+   "for": "li.ipc-metadata-list-summary-item",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "titles",
+   "items": "li.ipc-metadata-list-summary-item",
+   "limit": 8,
+   "fields": {
+    "title": "a.ipc-metadata-list-summary-item__t, a.ipc-title-link-wrapper",
+    "details": {
+     "sel": ".ipc-inline-list__item",
+     "all": true
+    },
+    "rating": ".ipc-rating-star--rating, [data-testid=\"ratingGroup--imdb-rating\"]",
+    "link": {
+     "sel": "a[href*=\"/title/\"]",
+     "attr": "url"
+    }
+   }
+  }
+ ],
+ "output": "{{titles}}",
+ "notes": "Checked on imdb.com (Nov 2026): results are li.ipc-metadata-list-summary-item; details are year, length or 'Episode'; rating reads like '8.2 (36K)'."
+}

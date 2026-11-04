@@ -1,0 +1,90 @@
+{
+ "id": "places-nearby",
+ "name": "Find places (Google Maps)",
+ "description": "Search Google Maps for places (restaurants, hospitals, shops, ATMs…) in or near a place: name, rating, number of reviews, type, address, opening hours and link.",
+ "sites": [
+  "google.com"
+ ],
+ "tags": [
+  "maps",
+  "places",
+  "near me",
+  "nearest",
+  "restaurant",
+  "hotel",
+  "hospital",
+  "shop",
+  "atm",
+  "google maps"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what and where, e.g. vegetarian restaurants in Thrissur, ATM near Kochi airport"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.google.com/maps/search/{{query}}?hl=en"
+  },
+  {
+   "do": "wait",
+   "for": "div[role=\"feed\"] div[role=\"article\"], h1.DUwDvf",
+   "timeout": 20000
+  },
+  {
+   "do": "sleep",
+   "ms": 1500
+  },
+  {
+   "do": "extract",
+   "as": "places",
+   "items": "div[role=\"feed\"] div[role=\"article\"]",
+   "limit": 10,
+   "fields": {
+    "name": {
+     "sel": "a.hfpxzc",
+     "attr": "aria-label"
+    },
+    "rating": "span.MW4etd",
+    "reviews": "span.UY7F9",
+    "details": {
+     "sel": ".W4Efsd .W4Efsd",
+     "all": true
+    },
+    "link": {
+     "sel": "a.hfpxzc",
+     "attr": "url"
+    }
+   }
+  },
+  {
+   "do": "extract",
+   "as": "one.name",
+   "sel": "h1.DUwDvf"
+  },
+  {
+   "do": "extract",
+   "as": "one.rating",
+   "sel": "div.F7nice"
+  },
+  {
+   "do": "extract",
+   "as": "one.address",
+   "sel": "button[data-item-id=\"address\"]"
+  },
+  {
+   "do": "extract",
+   "as": "one.phone",
+   "sel": "button[data-item-id^=\"phone\"]"
+  }
+ ],
+ "output": {
+  "places": "{{places}}",
+  "onePlace": "{{one}}"
+ },
+ "notes": "Checked on google.com/maps (Nov 2026): results are div[role=article] in the feed (about 5–7 load at first); a.hfpxzc carries the name. A search that names one place opens it directly: onePlace has its name, rating, address and phone."
+}

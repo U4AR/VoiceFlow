@@ -1,0 +1,58 @@
+{
+ "id": "google-search",
+ "name": "Google search",
+ "description": "Search Google and return the results on the first page: title, link, site and snippet, plus Google's AI overview when it shows one.",
+ "sites": [
+  "google.com"
+ ],
+ "tags": [
+  "google",
+  "search",
+  "web",
+  "results"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "what to search for"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.google.com/search?q={{query}}&hl=en"
+  },
+  {
+   "do": "wait",
+   "for": "#search h3",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "overview",
+   "sel": "#m-x-content"
+  },
+  {
+   "do": "extract",
+   "as": "results",
+   "items": "#search div.MjjYud:has(a h3)",
+   "limit": 10,
+   "fields": {
+    "title": "h3",
+    "link": {
+     "sel": "a:has(h3)",
+     "attr": "href"
+    },
+    "site": "cite",
+    "snippet": "div.VwiC3b, [data-sncf=\"1\"]"
+   }
+  }
+ ],
+ "output": {
+  "overview": "{{overview}}",
+  "results": "{{results}}"
+ },
+ "notes": "Checked on google.com (Nov 2026, India): results are div.MjjYud with an h3 link; the AI overview, when there is one, is #m-x-content (empty otherwise)."
+}

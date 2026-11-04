@@ -1,0 +1,56 @@
+{
+ "id": "stock-quote",
+ "name": "Stock price",
+ "description": "The current price of a stock or index from Google Finance: name, price, today's change, previous close and the time of the quote.",
+ "sites": [
+  "google.com"
+ ],
+ "tags": [
+  "stock",
+  "share price",
+  "market",
+  "nse",
+  "bse",
+  "nasdaq",
+  "finance",
+  "quote"
+ ],
+ "model": "none",
+ "inputs": {
+  "symbol": {
+   "type": "string",
+   "required": true,
+   "description": "ticker and exchange as Google Finance writes them, e.g. RELIANCE:NSE, TCS:NSE, INFY:NSE, AAPL:NASDAQ, NIFTY_50:INDEXNSE"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.google.com/finance/quote/{{symbol}}?hl=en"
+  },
+  {
+   "do": "wait",
+   "for": "main",
+   "timeout": 15000
+  },
+  {
+   "do": "sleep",
+   "ms": 1500
+  },
+  {
+   "do": "extract",
+   "as": "name",
+   "sel": "title"
+  },
+  {
+   "do": "read",
+   "as": "quote",
+   "max": 520
+  }
+ ],
+ "output": {
+  "name": "{{name}}",
+  "quote": "{{quote}}"
+ },
+ "notes": "Checked on google.com/finance (Nov 2026): the page's class names are generated, so the flow reads the top of the page (name, price, change, date, previous close) as text."
+}
