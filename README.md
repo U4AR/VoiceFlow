@@ -71,6 +71,8 @@ Before this change the same "ask Claude" question took 13 calls and about 95 s.
 - When a saved flow clearly does the request, one fast model call reads its inputs from the user's words. The flow then starts right away, while the agent is still building its first step. The agent's `run_flow` then gets that run instead of starting a second one. There is a switch for this on the Tasks page.
 - A voice task makes its own tab. A flow it runs works in that tab, not in a separate background tab. Some sites, ChatGPT among them, do not draw their page in a plain background tab. If a page is still not ready after 6 s, the flow brings its tab to the front.
 - When a flow will do the job, the task's tab starts empty instead of copying the page the user was on.
+- **Live transcription.** Speech streams to Muse Voice Transcribe's realtime socket (`wss://api.meta.ai/v1/asr/realtime`, push-to-talk mode) while you hold, and the words so far show in the "Listening…" box. When you let go, only the last moment of audio is left to process. If the socket fails, the recording is uploaded as before; if it stalls, the upload follows after 2.5 s. `tests/hold-test.py` checks this against a mock socket.
+- Holding on a text box dictates into that box, even when another box has the cursor. For example, a new Gmail message puts the cursor in "To", but holding on the message body types there.
 
 ## Finding, adopting and making flows automatically
 
