@@ -7,9 +7,10 @@ import { WebSocketServer } from '/tmp/claude-0/va9run/flowlib/node_modules/ws/wr
 const target = Number(process.env.MOCK_PORT);
 let mode = 'ok';
 let stats = [];
-const LIVE = process.env.LIVE_TRANSCRIPT || 'type exactly: live words here';
+let LIVE = process.env.LIVE_TRANSCRIPT || 'type exactly: live words here';
 const server = https.createServer({ key: readFileSync('key.pem'), cert: readFileSync('cert.pem') }, (req, res) => {
   if (req.url.startsWith('/__mode')) { mode = new URL(req.url, 'https://x').searchParams.get('m'); stats = []; res.end(mode); return; }
+  if (req.url.startsWith('/__live')) { LIVE = new URL(req.url, 'https://x').searchParams.get('t'); res.end(LIVE); return; }
   if (req.url.startsWith('/__stats')) { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(stats)); return; }
   const chunks = [];
   req.on('data', (c) => chunks.push(c));

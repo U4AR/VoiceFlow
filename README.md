@@ -72,6 +72,9 @@ Before this change the same "ask Claude" question took 13 calls and about 95 s.
 - A voice task makes its own tab. A flow it runs works in that tab, not in a separate background tab. Some sites, ChatGPT among them, do not draw their page in a plain background tab. If a page is still not ready after 6 s, the flow brings its tab to the front.
 - When a flow will do the job, the task's tab starts empty instead of copying the page the user was on.
 - **Live transcription.** Speech streams to Muse Voice Transcribe's realtime socket (`wss://api.meta.ai/v1/asr/realtime`, push-to-talk mode) while you hold, and the words so far show in the "Listening…" box. When you let go, only the last moment of audio is left to process. If the socket fails, the recording is uploaded as before; if it stalls, the upload follows after 2.5 s. `tests/hold-test.py` checks this against a mock socket.
+- **Dictation is written out, not transcribed.** Muse Spark fixes punctuation, drops fillers, follows "new paragraph" or "bullet point", and lays out an email body with the greeting, paragraphs and sign-off on their own lines.
+- **Dictation or instruction** is decided from where you are typing (site, page title, field label, the text around the cursor) and who the words are addressed to. "Hi Sam, I want you to…" in a mail body is typed; "ask ChatGPT…" is a task; starting with the agent's name is always a task.
+- **Voice edits.** "Change Sam to Priya", "delete the last sentence" or "fix the spelling of Tuesday" become find-and-replace edits on the text already in the box. Each one selects the words and types over them (or deletes them), as a keystroke would, so rich editors such as Gmail accept it and Ctrl+Z undoes it.
 - Holding on a text box dictates into that box, even when another box has the cursor. For example, a new Gmail message puts the cursor in "To", but holding on the message body types there.
 
 ## Finding, adopting and making flows automatically

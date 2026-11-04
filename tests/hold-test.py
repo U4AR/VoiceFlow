@@ -6,7 +6,7 @@ R = '/tmp/claude-0/va9run'
 EXT = sys.argv[1] if len(sys.argv) > 1 else R + '/ext-live'
 KEY = 'LLM_testkey_0123456789abcdefABCDEF'
 env = dict(os.environ, PORT='8791', MOCK_KEY=KEY, MOCK_TRANSCRIPT='type exactly: uploaded words',
-           MOCK_CHAT_RULES=R + '/fast-rules.json', MOCK_SCRIPT=R + '/fast-scripts.json', DUMP_DIR=R + '/dumps-hold')
+           MOCK_CHAT_RULES=R + '/hold-rules.json', MOCK_SCRIPT=R + '/fast-scripts.json', DUMP_DIR=R + '/dumps-hold')
 procs = [subprocess.Popen(['npx', 'tsx', R + '/mock/mock5.mts'], cwd='/home/claude/voice-agent/packages/meta-client', env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT),
          subprocess.Popen(['node', 'tls-proxy-ws.mjs'], cwd=R, env=dict(os.environ, MOCK_PORT='8791', TLS_PORT='8443'), stdout=open(R + '/proxy-ws.log', 'w'), stderr=subprocess.STDOUT),
          subprocess.Popen(['python3', '-m', 'http.server', '8792', '--bind', '127.0.0.1'], cwd=R + '/kpf', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
@@ -97,8 +97,26 @@ try:
     web.focus('#a'); web.mouse.move(900, 600); web.mouse.down(); web.wait_for_timeout(2600); web.mouse.up(); web.wait_for_timeout(3000)
     a = web.evaluate("document.querySelector('#a').value")
     check('page hold does not type into the focused input', a == '', a)
+    # 7. spoken edit: find and replace in the box under the pointer
+    proxy('/__live?t=change%20Sam%20to%20Priya')
+    web.goto('http://127.0.0.1:8792/dict.html'); web.wait_for_timeout(1500)
+    web.evaluate("document.querySelector('#b').value='Hi Sam, see you tomorrow at the cafe.'")
+    web.focus('#a'); bx = web.locator('#b').bounding_box(); web.mouse.move(bx['x']+30, bx['y']+30); web.mouse.down(); web.wait_for_timeout(2600); web.mouse.up()
+    v = None
+    for _ in range(50):
+        web.wait_for_timeout(100); v = web.evaluate("document.querySelector('#b').value")
+        if 'Priya' in v: break
+    pill = web.evaluate("(document.querySelector('[data-voice-agent=hold]')||{}).textContent||''")
+    check('edit: find and replace in the field', v == 'Hi Priya, see you at the cafe.', (v, pill))
+    # 8. spoken edit in a contenteditable
+    web.evaluate("document.querySelector('#c').innerHTML='<div>Hi Sam,</div><div><br></div><div>See you tomorrow.</div>'")
+    bx = web.locator('#c').bounding_box(); web.mouse.move(bx['x']+60, bx['y']+12); web.mouse.down(); web.wait_for_timeout(2600); web.mouse.up()
+    for _ in range(50):
+        web.wait_for_timeout(100); v = web.evaluate("document.querySelector('#c').innerText")
+        if 'Priya' in v: break
+    check('edit: contenteditable', 'Hi Priya,' in v and 'tomorrow' not in v and 'See you.' in v, v)
     for l in logs(sw):
-        if '[va] live' in l or 'uncaught' in l.lower(): print('   ', l)
+        if '[va] live' in l or '[va] voice decision' in l or 'uncaught' in l.lower(): print('   ', l)
     print(f'RESULT {sum(results)} of {len(results)} passed')
     try: b.new_browser_cdp_session().send('Browser.close')
     except Exception: pass
