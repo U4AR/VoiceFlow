@@ -6,14 +6,14 @@ A voice-driven browser agent (Edge/Chrome extension) that turns repeatable brows
 |---|---|
 | `extension/` | The extension, ready to load unpacked (Nanobrowser fork plus the Voice Agent add-ons) |
 | `extension/mcp/` | `voice-agent-mcp.mjs`, a local MCP server that exposes every saved flow as a tool to Claude Code, Claude Desktop or any MCP app |
-| `library/` | The online flow library: a Cloudflare Worker with a D1 database, a browse page and 16 starter flows |
+| `library/` | The online flow library: a Cloudflare Worker with a D1 database, a browse page and 22 starter flows. Live at https://voice-agent-flows.unity4ar.workers.dev |
 | `src/` | How `extension/background.js` is built from the add-on files |
 | `tests/` | End-to-end tests (real extension, site replicas, MCP SDK client, Claude Code) |
 
 ## Quick start
 
-1. **Load the extension:** go to `edge://extensions` (or `chrome://extensions`), turn on Developer mode, choose **Load unpacked** and pick `extension/`. Add your Meta API key in its settings.
-2. **Put the library online (optional):** `cd library && npm install && node deploy.mjs`. Then paste the printed address into the Tasks page under **Flows → Online flow library**.
+1. **Load the extension:** unzip `releases/voice-agent-extension.zip`, or use `extension/` from this repo. Go to `edge://extensions` (or `chrome://extensions`), turn on Developer mode, choose **Load unpacked** and pick the unzipped `voice-agent` folder (or `extension/`). Add your Meta API key in its settings.
+2. **The online library** at https://voice-agent-flows.unity4ar.workers.dev is already set as the default. To run your own copy instead, `cd library && npm install && node deploy.mjs`, then paste the printed address into the Tasks page under **Flows → Online flow library**.
 3. **Use the flows from Claude Code (optional):**
    - Run `node extension/mcp/voice-agent-mcp.mjs --pairing-code`.
    - Paste the code into the Tasks page under **Apps on this computer (MCP)**.

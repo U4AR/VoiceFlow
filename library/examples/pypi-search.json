@@ -1,0 +1,54 @@
+{
+ "id": "pypi-search",
+ "name": "Search PyPI packages",
+ "description": "Search the Python Package Index (PyPI): package name, description, link and release date.",
+ "sites": [
+  "pypi.org"
+ ],
+ "tags": [
+  "python",
+  "pypi",
+  "packages",
+  "pip",
+  "developer"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "package name or words"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://pypi.org/search/?q={{query}}"
+  },
+  {
+   "do": "wait",
+   "for": "a.package-snippet",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "packages",
+   "items": "a.package-snippet",
+   "limit": 20,
+   "fields": {
+    "name": ".package-snippet__name",
+    "description": ".package-snippet__description",
+    "link": {
+     "sel": ":scope",
+     "attr": "url"
+    },
+    "released": {
+     "sel": ".package-snippet__created time",
+     "attr": "datetime"
+    }
+   }
+  }
+ ],
+ "output": "{{packages}}",
+ "notes": "Checked on pypi.org/search (Nov 2026): 20 results a page."
+}

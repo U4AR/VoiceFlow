@@ -1,0 +1,15 @@
+# Local tests of dist/worker.js (the one-file build from build-single.mjs): wrangler dev --config wrangler.single.toml.
+# To deploy, use deploy.mjs (wrangler.toml) or paste dist/worker.js into the Cloudflare dashboard.
+name = "voice-agent-flows"
+main = "dist/worker.js"
+compatibility_date = "2025-09-01"
+
+
+[[d1_databases]]
+binding = "DB"
+database_name = "voice-agent-flows"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Local tests only: no Workers AI; a small word-hash embedding stands in for it.
+[vars]
+EMBED = "hash"

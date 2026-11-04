@@ -4,6 +4,33 @@ A shared library of **flows**: small, tested functions for the browser ("search 
 
 It is a Cloudflare Worker (the API), a static page (browse and search) and a D1 database. It fits within Cloudflare's free plan.
 
+## The live library
+
+**https://voice-agent-flows.unity4ar.workers.dev** is the default library for the extension. Its matching uses Workers AI, and it starts with 22 read-only starter flows:
+
+| Site | Flows |
+|---|---|
+| Gmail | `gmail-search`, `gmail-read-mails`, `gmail-digest` |
+| YouTube | `youtube-search`, `youtube-feed`, `youtube-channel-videos` |
+| Amazon.in / Flipkart | `amazon-search`, `amazon-best-pick`, `flipkart-search`, `price-compare` |
+| ChatGPT / Claude | `ask-chatgpt`, `ask-claude` |
+| News and search | `hackernews-top`, `duckduckgo-search`, `wikipedia-summary`, `topic-briefing`, `morning-digest` |
+| Developers | `github-trending`, `pypi-search`, `arxiv-search` |
+| Everyday | `weather-now` (wttr.in), `currency-rate` |
+
+You can point the extension at your own copy instead (Tasks page → Flows → Library address).
+
+### Updating it without wrangler
+
+The usual way is `node deploy.mjs` (wrangler, with `wrangler.toml`). Without wrangler:
+- `node build-single.mjs` writes `dist/worker.js`, a single module that holds the API, the matching and the browse page.
+- In the Cloudflare dashboard, open Workers & Pages → voice-agent-flows → Edit code, replace `worker.js` with it, and click Deploy.
+- Afterwards, check that the Worker's bindings still include `DB` (the D1 database) and `AI` (Workers AI).
+
+`wrangler.single.toml` runs `dist/worker.js` locally for tests, with word-hash embeddings instead of Workers AI.
+
+The thresholds for matching are in `src/match.js`. `MATCH_LOW` and `MATCH_SPAN` are optional Worker variables that change how embedding similarity is rescaled, so you can retune matching without a new build. Measured on the live library, unrelated task/flow pairs score below about 0.44 with bge-m3, and matching pairs score 0.47 to 0.65.
+
 ## Put it online (once)
 
 You need Node.js 18 or later and a Cloudflare account.

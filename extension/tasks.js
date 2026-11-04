@@ -271,10 +271,11 @@ render(true);
 setInterval(tick, 1000);
 
 // ---------- Flows ----------
+const DEFAULT_REPO = 'https://voice-agent-flows.unity4ar.workers.dev'; // keep in step with va-flows-bg.js
 async function renderFlows() {
   const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.author']);
   const flows = Object.values(r['va.flows'] || {}).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-  const repo = r['va.flows.repo'] || '';
+  const repo = r['va.flows.repo'] || DEFAULT_REPO; // the extension uses the default library when none is saved
   if (document.activeElement !== $('repo')) $('repo').value = repo;
   if (document.activeElement !== $('author')) $('author').value = r['va.flows.author'] || '';
   $('flowsOnline').checked = r['va.flows.online'] !== false;
@@ -334,8 +335,8 @@ $('saveRepo').onclick = async () => {
     const ok = await chrome.permissions.contains({ origins: [new URL(v).origin + '/*'] }).catch(() => true);
     if (!ok) await chrome.permissions.request({ origins: [new URL(v).origin + '/*'] }).catch(() => false);
   }
-  await chrome.storage.local.set({ 'va.flows.repo': v, 'va.flows.author': $('author').value.trim().slice(0, 40) });
-  $('repoMsg').textContent = 'Saved';
+  await chrome.storage.local.set({ 'va.flows.repo': v === DEFAULT_REPO ? '' : v, 'va.flows.author': $('author').value.trim().slice(0, 40) });
+  $('repoMsg').textContent = v && v !== DEFAULT_REPO ? 'Saved' : 'Saved (the default library)';
 };
 $('testRepo').onclick = async () => {
   $('repoMsg').textContent = 'Checking…';

@@ -11,7 +11,7 @@
 export const MODEL = '@cf/baai/bge-m3';
 const HASH_DIM = 256;
 const STOP = new Set(
-  'a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show find tell give make let us our what which who how when where about any some all'.split(' '),
+  'a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go what which who how when where about any some all'.split(' '),
 );
 
 export const tokens = (s) =>
@@ -23,7 +23,7 @@ export const tokens = (s) =>
     .map(stem)
     .map((w) => SAME[w] || w);
 // Words that mean the same thing for finding a flow.
-const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', gmail: 'gmail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', news: 'news', headline: 'news', story: 'news', storie: 'news', top: 'top', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt' };
+const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', gmail: 'gmail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', news: 'news', headline: 'news', story: 'news', storie: 'news', top: 'top', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt', rupee: 'currency', dollar: 'currency', euro: 'currency', yen: 'currency', pound: 'currency', usd: 'currency', inr: 'currency', eur: 'currency', gbp: 'currency', exchange: 'currency', forex: 'currency', rain: 'weather', raining: 'weather', forecast: 'weather', temperature: 'weather', humid: 'weather', humidity: 'weather', sunny: 'weather', paper: 'paper', papers: 'paper', };
 function stem(w) {
   if (!/^[a-z]+$/.test(w) || w.length < 5) return w;
   return w.replace(/(ings|ing|ers|er|ies|es|ed|s)$/, (m) => (m === 'ies' ? 'y' : ''));
@@ -146,11 +146,14 @@ export async function rank(env, task, site, limit = 5) {
   const ix = await index(env);
   if (!ix.rows.length) return [];
   const q = [...new Set(tokens(task))];
-  const idf = (t) => Math.log(1 + ix.n / (1 + (ix.df.get(t) || 0))) * (ix.brands.has(t) ? 3 : 1);
+  // Words no flow uses cannot tell flows apart (they are often the question itself): they count only a little.
+  const idf = (t) => (!ix.df.get(t) ? 0.5 : Math.log(1 + ix.n / (1 + ix.df.get(t))) * (ix.brands.has(t) ? 3 : 1));
   const qWeight = q.reduce((a, t) => a + idf(t), 0) || 1;
   const named = q.some((t) => ix.brands.has(t)); // the task names a site or product
   const host = hostOf(site);
   const qv = ix.kind ? (await embed(env, [task]).catch(() => null))?.[0] : null;
+  const low = Number(env.MATCH_LOW) || 0.42;
+  const span = Number(env.MATCH_SPAN) || 0.2;
   const out = [];
   for (const r of ix.rows) {
     const set = ix.toks.get(r.id);
@@ -167,10 +170,12 @@ export async function rank(env, task, site, limit = 5) {
     }
     const sites = JSON.parse(r.sites || '[]');
     // The site the user is on counts for a lot when the task names none ("search for flutter" on youtube.com).
-    const here = onSite(host, sites) ? (named ? 0.05 : 0.25) : 0;
     const reliable = r.runs > 3 ? (r.ok / r.runs - 0.5) * 0.1 : 0;
-    // bge-m3 similarities of unrelated texts sit around 0.3-0.45 and of matching ones above 0.6: rescale to 0..1.
-    const m = ix.kind === 'ai' ? Math.max(0, (meaning - 0.35) / 0.4) : meaning;
+    // Measured with bge-m3 on the live library (Nov 2026): unrelated task/flow pairs stay below about 0.44, matching
+    // ones are 0.47-0.65. Rescale that band to 0..1 (MATCH_LOW / MATCH_SPAN in the Worker's settings adjust it).
+    const m = ix.kind === 'ai' ? Math.max(0, (meaning - low) / span) : meaning;
+    // ...but only for a flow the task has something to do with (on youtube.com, "turn off the lights" is no YouTube task).
+    const here = onSite(host, sites) && (hit.length || m > 0.05) ? (named ? 0.05 : 0.25) : 0;
     const score = (qv ? 0.6 * Math.min(1, m) + 0.4 * words : words) + here + reliable;
     // It names a site or product that only one or two flows are about ("chatgpt", "irctc").
     const rare = hit.some((t) => ix.brands.has(t) && (ix.df.get(t) || 0) <= 2);
@@ -183,7 +188,8 @@ export async function rank(env, task, site, limit = 5) {
 export function verdict(best, second, kind) {
   if (!best) return 'none';
   const gap = best.score - (second ? second.score : 0);
-  const sure = kind ? best.score >= 0.55 && (gap >= 0.08 || best.score >= 0.75) : best.words >= 0.6 && best.hits.length >= 2;
+  // Flows of one site score alike ("gmail-search" / "gmail-digest"): without a clear gap the caller is shown both.
+  const sure = kind ? (best.score >= 0.7 && gap >= 0.03) || (best.score >= 0.5 && gap >= 0.06) || (best.score >= 0.4 && gap >= 0.1) || (best.score >= 0.3 && gap >= 0.15) : best.words >= 0.6 && best.hits.length >= 2;
   if (sure || (best.rare && gap >= 0.08 && best.score >= 0.2)) return 'use';
-  return best.score >= (kind ? 0.35 : 0.3) ? 'maybe' : 'none';
+  return best.score >= (kind ? 0.2 : 0.3) ? 'maybe' : 'none';
 }

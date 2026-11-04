@@ -1,0 +1,60 @@
+{
+ "id": "currency-rate",
+ "name": "Currency exchange rate",
+ "description": "Convert an amount between two currencies at today's exchange rate (from x-rates.com), e.g. USD to INR.",
+ "sites": [
+  "www.x-rates.com"
+ ],
+ "tags": [
+  "currency",
+  "exchange rate",
+  "forex",
+  "money",
+  "convert"
+ ],
+ "model": "none",
+ "inputs": {
+  "from": {
+   "type": "string",
+   "default": "USD",
+   "description": "currency code, e.g. USD"
+  },
+  "to": {
+   "type": "string",
+   "default": "INR",
+   "description": "currency code, e.g. INR"
+  },
+  "amount": {
+   "type": "string",
+   "default": "1",
+   "description": "amount to convert"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.x-rates.com/calculator/?from={{from}}&to={{to}}&amount={{amount}}"
+  },
+  {
+   "do": "wait",
+   "for": "span.ccOutputRslt",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "result",
+   "sel": "span.ccOutputRslt"
+  },
+  {
+   "do": "extract",
+   "as": "asOf",
+   "sel": "span.calOutputTS"
+  }
+ ],
+ "output": {
+  "amount": "{{amount}} {{from}}",
+  "result": "{{result}}",
+  "asOf": "{{asOf}}"
+ },
+ "notes": "Checked on x-rates.com (Nov 2026): '94.631515 INR' for 1 USD."
+}

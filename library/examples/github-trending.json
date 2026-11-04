@@ -1,0 +1,58 @@
+{
+ "id": "github-trending",
+ "name": "GitHub trending repositories",
+ "description": "List the trending repositories on GitHub today (or this week/month), optionally for one language: name, link, description, language, stars and stars gained.",
+ "sites": [
+  "github.com"
+ ],
+ "tags": [
+  "github",
+  "trending",
+  "code",
+  "repositories",
+  "developer"
+ ],
+ "model": "none",
+ "inputs": {
+  "since": {
+   "type": "string",
+   "default": "daily",
+   "description": "daily, weekly or monthly"
+  },
+  "language": {
+   "type": "string",
+   "default": "",
+   "description": "e.g. python, rust (empty for all)"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://github.com/trending/{{language}}?since={{since}}"
+  },
+  {
+   "do": "wait",
+   "for": "article.Box-row",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "repos",
+   "items": "article.Box-row",
+   "limit": 25,
+   "fields": {
+    "repo": "h2 a",
+    "link": {
+     "sel": "h2 a",
+     "attr": "url"
+    },
+    "description": "p.col-9",
+    "language": "[itemprop=programmingLanguage]",
+    "stars": "a[href$=\"/stargazers\"]",
+    "gained": "span.d-inline-block.float-sm-right"
+   }
+  }
+ ],
+ "output": "{{repos}}",
+ "notes": "Checked on github.com/trending (Nov 2026): 13+ repositories; repo names read like 'owner / name'."
+}

@@ -54,7 +54,7 @@ if (!url) {
 // 5. Publish the starter flows with this computer's contributor token (kept in .contributor-token).
 if (!existsSync('.contributor-token')) writeFileSync('.contributor-token', randomBytes(24).toString('hex'));
 const token = readFileSync('.contributor-token', 'utf8').trim();
-const order = ['gmail-search', 'gmail-read-mails', 'amazon-search', 'flipkart-search', 'youtube-feed', 'youtube-search', 'hackernews-top', 'duckduckgo-search', 'wikipedia-summary', 'gmail-digest', 'amazon-best-pick', 'price-compare', 'topic-briefing', 'morning-digest', 'ask-chatgpt', 'ask-claude'];
+const order = ['gmail-search', 'gmail-read-mails', 'amazon-search', 'flipkart-search', 'youtube-feed', 'youtube-search', 'hackernews-top', 'duckduckgo-search', 'wikipedia-summary', 'gmail-digest', 'amazon-best-pick', 'price-compare', 'topic-briefing', 'morning-digest', 'ask-chatgpt', 'ask-claude', 'github-trending', 'arxiv-search', 'pypi-search', 'weather-now', 'currency-rate', 'youtube-channel-videos'];
 const files = readdirSync('examples').map((f) => f.replace(/\.json$/, ''));
 for (const name of [...order.filter((n) => files.includes(n)), ...files.filter((n) => !order.includes(n))]) {
   const flow = JSON.parse(readFileSync(`examples/${name}.json`, 'utf8'));

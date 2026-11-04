@@ -280,7 +280,7 @@
     // The library hears that this kind of task has no flow here (kind, name, site only), once per kind.
     if (p.reportWanted) {
       await edit('va.patterns', {}, (all) => void (all[kind] && delete all[kind].reportWanted));
-      globalThis.__vaWanted?.(p.kind, p.name, p.sites[0] || '').then((r) => r && console.info('[va] library: wanted', p.kind, '(' + r.people + ' people)'));
+      globalThis.__vaWanted?.(p.kind, p.name, p.sites[0] || '').then((r) => r && console.info('[va] library: wanted', p.kind, '(' + (r.clients ?? r.people) + ' people' + (r.coveredBy ? ', covered by ' + r.coveredBy : '') + ')'));
     }
     if (p.suggest && (await chrome.storage.local.get('va.flows.auto'))['va.flows.auto'] !== false) autoMake(conversationId, p).catch((e) => console.warn('[va] auto flow:', e && e.message));
     return p;

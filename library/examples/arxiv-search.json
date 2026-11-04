@@ -1,0 +1,52 @@
+{
+ "id": "arxiv-search",
+ "name": "Search arXiv papers",
+ "description": "Search arXiv for research papers: title, authors, link, submission date and the start of the abstract, newest relevant first.",
+ "sites": [
+  "arxiv.org"
+ ],
+ "tags": [
+  "arxiv",
+  "papers",
+  "research",
+  "science",
+  "ai"
+ ],
+ "model": "none",
+ "inputs": {
+  "query": {
+   "type": "string",
+   "required": true,
+   "description": "words to search for"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://arxiv.org/search/?query={{query}}&searchtype=all"
+  },
+  {
+   "do": "wait",
+   "for": "li.arxiv-result",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "papers",
+   "items": "li.arxiv-result",
+   "limit": 20,
+   "fields": {
+    "title": "p.title",
+    "authors": "p.authors",
+    "link": {
+     "sel": "p.list-title a",
+     "attr": "url"
+    },
+    "date": "p.is-size-7",
+    "abstract": "span.abstract-short"
+   }
+  }
+ ],
+ "output": "{{papers}}",
+ "notes": "Checked on arxiv.org/search (Nov 2026): 50 results a page."
+}

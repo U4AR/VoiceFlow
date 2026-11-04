@@ -68,15 +68,19 @@ async function search(env, url) {
     const where = terms.map((_, i) => 'search LIKE ?' + (i + 1)).join(' OR ');
     rows = (await env.DB.prepare('SELECT * FROM flows WHERE hidden = 0 AND (' + where + ') ORDER BY updated DESC LIMIT 300').bind(...terms.map((t) => '%' + t + '%')).all()).results;
   } else rows = (await env.DB.prepare('SELECT * FROM flows WHERE hidden = 0 ORDER BY updated DESC LIMIT ?1').bind(limit).all()).results;
+  // With words, a flow must match one of them; the site the user is on then only breaks ties (on google.com, "weather"
+  // finds the weather flow, not every Google flow). Without words, the site picks the flows.
   const scored = rows.map((r) => {
     const hay = r.search;
-    let score = q.filter((w) => hay.includes(w)).length * 3;
-    if (site && JSON.parse(r.sites).some((s) => F.hostIn(site, s) || F.hostIn(s, site))) score += 4;
+    const hits = q.filter((w) => hay.includes(w)).length;
+    let score = hits * 3;
+    if (site && JSON.parse(r.sites).some((s) => F.hostIn(site, s) || F.hostIn(s, site))) score += q.length ? 1 : 4;
+    if (q.length && !hits) score = -100;
     score += Math.min(3, Math.log10(1 + r.ok)) - (r.runs > 3 && r.ok / r.runs < 0.5 ? 2 : 0);
     return { r, score };
   });
   scored.sort((a, b) => b.score - a.score || String(b.r.updated).localeCompare(String(a.r.updated)));
-  return reply({ flows: scored.slice(0, limit).map((x) => summary(x.r)) }, 200, { 'cache-control': 'public, max-age=30' });
+  return reply({ flows: scored.filter((x) => x.score > -50).slice(0, limit).map((x) => summary(x.r)) }, 200, { 'cache-control': 'public, max-age=30' });
 }
 
 async function publish(env, req, ip) {

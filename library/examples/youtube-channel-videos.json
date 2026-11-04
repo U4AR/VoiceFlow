@@ -1,0 +1,57 @@
+{
+ "id": "youtube-channel-videos",
+ "name": "A YouTube channel's latest videos",
+ "description": "List the latest videos of a YouTube channel by its handle: title, link and views/age.",
+ "sites": [
+  "youtube.com"
+ ],
+ "tags": [
+  "youtube",
+  "channel",
+  "videos",
+  "latest",
+  "subscriptions"
+ ],
+ "model": "none",
+ "inputs": {
+  "handle": {
+   "type": "string",
+   "required": true,
+   "description": "channel handle without @, e.g. Fireship"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://www.youtube.com/@{{handle}}/videos"
+  },
+  {
+   "do": "wait",
+   "for": "ytd-rich-item-renderer a[href*=\"/watch\"]",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "videos",
+   "items": "ytd-rich-item-renderer",
+   "limit": 20,
+   "fields": {
+    "title": "h3",
+    "link": {
+     "sel": "a[href*=\"/watch\"]",
+     "attr": "url"
+    },
+    "meta": "#metadata-line, yt-content-metadata-view-model"
+   }
+  },
+  {
+   "do": "filter",
+   "in": "{{videos}}",
+   "field": "title",
+   "op": "exists",
+   "as": "videos"
+  }
+ ],
+ "output": "{{videos}}",
+ "notes": "Checked on youtube.com/@Fireship/videos (Nov 2026): 30 videos."
+}

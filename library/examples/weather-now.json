@@ -1,0 +1,43 @@
+{
+ "id": "weather-now",
+ "name": "Weather now",
+ "description": "Current weather for a city: conditions, temperature, feels-like, humidity, wind and chance of rain (from wttr.in).",
+ "sites": [
+  "wttr.in"
+ ],
+ "tags": [
+  "weather",
+  "temperature",
+  "rain",
+  "forecast",
+  "city"
+ ],
+ "model": "none",
+ "inputs": {
+  "city": {
+   "type": "string",
+   "required": true,
+   "description": "city name, e.g. Kochi"
+  }
+ },
+ "steps": [
+  {
+   "do": "open",
+   "url": "https://wttr.in/{{city}}?format=%l:+%C+%t+(feels+%f),+humidity+%h,+wind+%w,+rain+%p"
+  },
+  {
+   "do": "wait",
+   "for": "body",
+   "timeout": 15000
+  },
+  {
+   "do": "extract",
+   "as": "weather",
+   "sel": "body"
+  }
+ ],
+ "output": {
+  "weather": "{{weather}}"
+ },
+ "notes": "Checked on wttr.in (Nov 2026): one line such as 'Kochi: Partly Cloudy +24°C (feels +28°C), humidity 89%, wind 6km/h'."
+}

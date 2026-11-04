@@ -19,14 +19,14 @@
     const s = JSON.stringify(v);
     return s === undefined ? 'null' : s.length > n ? s.slice(0, n) + '… (cut at ' + n + ' characters)' : s;
   };
-  const DEFAULT_REPO = '';
+  const DEFAULT_REPO = 'https://voice-agent-flows.unity4ar.workers.dev';
   let cache = {}; // the saved flows, kept in memory for the instructions note
   let settings = { repo: DEFAULT_REPO, online: true, token: '', author: '' };
   const load = async () => {
     const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.token', 'va.flows.author', 'va.flows.learn']);
     cache = r['va.flows'] && typeof r['va.flows'] === 'object' ? r['va.flows'] : {};
     settings = {
-      repo: String(r['va.flows.repo'] ?? DEFAULT_REPO).trim().replace(/\/+$/, ''),
+      repo: String(r['va.flows.repo'] || DEFAULT_REPO).trim().replace(/\/+$/, ''), // empty = the default library (turn it off with va.flows.online)
       online: r['va.flows.online'] !== false,
       share: r['va.flows.learn'] !== false, // send short, anonymised task phrasings with run reports (helps matching)
       token: r['va.flows.token'] || '',
@@ -541,8 +541,8 @@
   // Saved flows are matched here by their words; the online library answers by words and meaning (/api/resolve).
   // The best match goes into the agent's instructions, so a fitting flow is run at the first step; when nothing fits
   // the agent is told so and works the site out itself (and the task may later become a flow, see va-more-bg.js).
-  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show find tell give make let us our what which who how when where about any some all'.split(' '));
-  const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', headline: 'news', story: 'news', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt' };
+  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show tell give make let us our open go what which who how when where about any some all'.split(' '));
+  const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', headline: 'news', story: 'news', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt', rupee: 'currency', dollar: 'currency', euro: 'currency', yen: 'currency', pound: 'currency', usd: 'currency', inr: 'currency', eur: 'currency', gbp: 'currency', exchange: 'currency', forex: 'currency', rain: 'weather', raining: 'weather', forecast: 'weather', temperature: 'weather', humid: 'weather', humidity: 'weather', sunny: 'weather', paper: 'paper', papers: 'paper', };
   const stem = (w) => (!/^[a-z]+$/.test(w) || w.length < 5 ? w : w.replace(/(ings|ing|ers|er|ies|es|ed|s)$/, (m) => (m === 'ies' ? 'y' : '')));
   const toks = (x) => String(x || '').toLowerCase().normalize('NFKC').split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 1 && !STOP.has(w)).map(stem).map((w) => SAME[w] || w);
   const brandsOf = (flow) => {
@@ -559,13 +559,13 @@
     const brands = new Set(recs.flatMap((r) => [...brandsOf(r.flow)]));
     const df = new Map();
     for (const st of sets) for (const t of st) df.set(t, (df.get(t) || 0) + 1);
-    const idf = (t) => Math.log(1 + recs.length / (1 + (df.get(t) || 0))) * (brands.has(t) ? 3 : 1);
+    const idf = (t) => (!df.get(t) ? 0.5 : Math.log(1 + recs.length / (1 + df.get(t))) * (brands.has(t) ? 3 : 1));
     const total = q.reduce((a, t) => a + idf(t), 0) || 1;
     const named = q.some((t) => brands.has(t));
     return recs
       .map((r, i) => {
         const hit = q.filter((t) => sets[i].has(t));
-        const here = host && (r.flow.sites || []).some((x) => F.hostIn(host, String(x).replace(/^www\./, ''))) ? (named ? 0.05 : 0.25) : 0;
+        const here = host && hit.length && (r.flow.sites || []).some((x) => F.hostIn(host, String(x).replace(/^www\./, ''))) ? (named ? 0.05 : 0.25) : 0;
         const rare = hit.some((t) => brands.has(t) && (df.get(t) || 0) <= 2);
         return { rec: r, score: hit.reduce((a, t) => a + idf(t), 0) / total + here, hits: hit, rare };
       })
