@@ -62,6 +62,31 @@ for (const name of [...order.filter((n) => files.includes(n)), ...files.filter((
   const body = await res.json().catch(() => ({}));
   console.log(res.ok ? `published ${body.id} v${body.version}` : `could not publish ${name}: ${body.error} ${(body.errors || []).join('; ')}`);
 }
+// 6. Check that tasks find their flows (on Cloudflare, matching by meaning uses Workers AI, which also understands
+//    other languages). The first call may take a few seconds while the flows get their embeddings.
+const checks = [
+  ['ask Claude what the price of gold is today', 'ask-claude'],
+  ['what does chatgpt think about flutter vs react native', 'ask-chatgpt'],
+  ['search youtube for flutter riverpod tutorials', 'youtube-search'],
+  ['what is new on my youtube home feed', 'youtube-feed'],
+  ['find mails from my bank in gmail', 'gmail-search'],
+  ['compare earbud prices on amazon and flipkart', 'price-compare'],
+  ['top stories on hacker news', 'hackernews-top'],
+  ['look up Kerala on wikipedia', 'wikipedia-summary'],
+  ['യൂട്യൂബിൽ ഫ്ലട്ടർ വീഡിയോകൾ തിരയൂ', 'youtube-search'],
+  ['ChatGPT से पूछो कि आज कोच्चि में मौसम कैसा है', 'ask-chatgpt'],
+  ['book a train ticket on IRCTC', null],
+];
+let good = 0;
+for (const [task, want] of checks) {
+  const r = await (await fetch(url + '/api/resolve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task }) })).json().catch((e) => ({ error: e.message }));
+  const got = r.verdict === 'none' ? null : r.best && r.best.id;
+  const ok = got === want;
+  if (ok) good++;
+  console.log(`${ok ? 'ok  ' : 'MISS'} "${task}" → ${got || 'no flow'} (${r.verdict}${r.best ? ', score ' + r.best.score : ''}${want && !ok ? '; expected ' + want : ''})`);
+}
+console.log(`Matching check: ${good} of ${checks.length} tasks found the right flow.` + (good < checks.length ? ' The thresholds are in src/match.js (rank, verdict).' : ''));
+
 const health = await (await fetch(url + '/api/health')).json().catch(() => ({}));
-console.log(`\nThe flow library is live at ${url} (${health.flows ?? '?'} flows).`);
+console.log(`\nThe flow library is live at ${url} (${health.flows ?? '?'} flows, matching by ${health.matching === 'ai' ? 'meaning (Workers AI) and words' : 'words'}).`);
 console.log('In the extension: Tasks page → Flows → Online flow library → paste that address → Save → Test the connection.');

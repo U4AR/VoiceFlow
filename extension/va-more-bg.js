@@ -253,6 +253,7 @@
   globalThis.__vaPatternSeen = async (conversationId, kind, name, request, site, worth) => {
     kind = String(kind || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
     if (!kind || kind.length < 3 || VAGUE.has(kind)) return;
+    if (/^Make a reusable flow for/.test(String(request || ''))) return; // the flow-making task itself
     const flows = (await chrome.storage.local.get('va.flows'))['va.flows'] || {};
     const words = kind.split('-').filter((w) => w.length > 2);
     const covered = Object.values(flows).some((r) => {
@@ -272,11 +273,52 @@
       // Repeated, and judged repeatable at least once (one-off chats that happen to recur are not suggested).
       if (worth) x.worthy = true;
       x.suggest = x.count >= THRESHOLD && !!x.worthy && !covered && !x.dismissed && !x.flowRequested;
+      if (x.worthy && !covered && !x.wantedSent) (x.wantedSent = true), (x.reportWanted = true);
       return { ...x };
     });
     if (p.suggest) console.info('[va] common task:', p.kind, '(' + p.count + ' times) could be a flow');
+    // The library hears that this kind of task has no flow here (kind, name, site only), once per kind.
+    if (p.reportWanted) {
+      await edit('va.patterns', {}, (all) => void (all[kind] && delete all[kind].reportWanted));
+      globalThis.__vaWanted?.(p.kind, p.name, p.sites[0] || '').then((r) => r && console.info('[va] library: wanted', p.kind, '(' + r.people + ' people)'));
+    }
+    if (p.suggest && (await chrome.storage.local.get('va.flows.auto'))['va.flows.auto'] !== false) autoMake(conversationId, p).catch((e) => console.warn('[va] auto flow:', e && e.message));
     return p;
   };
+  // A repeated task with no flow: use one from the library if it has one, otherwise have an agent write and test one
+  // in the background. At most 3 a day, one at a time; the user can turn this off on the Tasks page.
+  const flowTask = (p) =>
+    'Make a reusable flow for a task I keep doing: ' + p.name + '. What I asked before: ' + p.examples.map((e) => '"' + e + '"').join('; ') +
+    '. Open the site' + (p.sites.length ? ' (' + p.sites.join(', ') + ')' : '') + ', use inspect_page for selectors, make the parts that change inputs, add a notify step if it waits for a result, and test it with save_flow. Then tell me how to run it.';
+  let making = null;
+  async function autoMake(conversationId, p) {
+    if (making && Date.now() - making.at < 15 * 60 * 1000) return console.info('[va] auto flow: already making', making.kind);
+    const log = ((await chrome.storage.local.get('va.autoFlows'))['va.autoFlows'] || []).filter((x) => Date.now() - Date.parse(x.at) < 864e5);
+    if (log.length >= 3) return console.info('[va] auto flow: 3 made today already; "' + p.name + '" waits on the Tasks page');
+    making = { kind: p.kind, at: Date.now() };
+    try {
+      await edit('va.patterns', {}, (all) => void (all[p.kind] && ((all[p.kind].flowRequested = true), (all[p.kind].suggest = false))));
+      const found = await globalThis.__vaLibraryFind?.(p.name + '. ' + (p.examples[0] || ''), p.sites[0] || '');
+      if (found) {
+        const r = await globalThis.__vaLibraryAdopt(found.id, conversationId).catch((e) => ({ ok: false, error: e.message }));
+        if (r.ok) {
+          await edit('va.patterns', {}, (all) => void (all[p.kind] && ((all[p.kind].covered = true), (all[p.kind].adopted = found.id))));
+          await chrome.storage.local.set({ 'va.autoFlows': [...log, { kind: p.kind, at: new Date().toISOString(), how: 'library', id: found.id }] });
+          console.info('[va] auto flow: using', found.id, 'from the library for', p.kind);
+          globalThis.__vaToast?.('A flow for “' + p.name + '”', 'Found “' + found.name + '” in the flow library. Next time this runs in one step.');
+          return;
+        }
+        if (r.declined) return console.info('[va] auto flow: you chose not to use', found.id);
+      }
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const started = await globalThis.__vaStartTask?.(tab && tab.id, flowTask(p));
+      await chrome.storage.local.set({ 'va.autoFlows': [...log, { kind: p.kind, at: new Date().toISOString(), how: 'made', conversationId: started && started.conversationId }] });
+      console.info('[va] auto flow: an agent is making a flow for', p.kind);
+      globalThis.__vaToast?.('Making a flow for “' + p.name + '”', 'You do this often, so an agent is writing and testing a flow for it in the background' + (p.sites.length ? ' (on ' + p.sites[0] + ')' : '') + '. Turn this off on the Tasks page.');
+    } finally {
+      making = null;
+    }
+  }
   // Tasks page: make a flow for a common task, or dismiss the suggestion.
   chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (!m || !['va.patternFlow', 'va.patternDismiss', 'va.memoryAdd', 'va.memoryDelete', 'va.viewDelete'].includes(m.type)) return;
@@ -289,9 +331,7 @@
       const p = ((await chrome.storage.local.get('va.patterns'))['va.patterns'] || {})[m.kind];
       if (!p) return { ok: false, error: 'unknown task kind' };
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      const text =
-        'Make a reusable flow for a task I keep doing: ' + p.name + '. What I asked before: ' + p.examples.map((e) => '"' + e + '"').join('; ') +
-        '. Open the site' + (p.sites.length ? ' (' + p.sites.join(', ') + ')' : '') + ', use inspect_page for selectors, make the parts that change inputs, add a notify step if it waits for a result, and test it with save_flow. Then tell me how to run it.';
+      const text = flowTask(p);
       await edit('va.patterns', {}, (all) => void (all[m.kind] && ((all[m.kind].flowRequested = true), (all[m.kind].suggest = false))));
       const r = await globalThis.__vaStartTask?.(tab && tab.id, text);
       return { ok: true, started: !!r };

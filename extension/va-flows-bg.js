@@ -23,11 +23,12 @@
   let cache = {}; // the saved flows, kept in memory for the instructions note
   let settings = { repo: DEFAULT_REPO, online: true, token: '', author: '' };
   const load = async () => {
-    const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.token', 'va.flows.author']);
+    const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.token', 'va.flows.author', 'va.flows.learn']);
     cache = r['va.flows'] && typeof r['va.flows'] === 'object' ? r['va.flows'] : {};
     settings = {
       repo: String(r['va.flows.repo'] ?? DEFAULT_REPO).trim().replace(/\/+$/, ''),
       online: r['va.flows.online'] !== false,
+      share: r['va.flows.learn'] !== false, // send short, anonymised task phrasings with run reports (helps matching)
       token: r['va.flows.token'] || '',
       author: clip(r['va.flows.author'] || '', 40),
     };
@@ -245,7 +246,7 @@
   const staticShape = (flow) => (flow.output && typeof flow.output === 'object' && !Array.isArray(flow.output) ? shapeOf(flow.output) : null);
   globalThis.__vaFlowShape = (id) => (cache[id] && (cache[id].shape || staticShape(cache[id].flow))) || null;
   globalThis.__vaLastFlow = new Map(); // conversation → the last flow it ran {id, input}
-  async function record(id, r, where) {
+  async function record(id, r, where, phrase) {
     await update((all) => {
       const rec = all[id];
       if (!rec) return;
@@ -259,7 +260,7 @@
       rec.lastRun = new Date().toISOString();
     });
     if (where === 'online' || (cache[id] && cache[id].source === 'online'))
-      online('/api/flows/' + encodeURIComponent(id) + '/report', { method: 'POST', body: { ok: r.ok, ms: r.ms || 0, error: r.ok ? undefined : clip(r.error, 200) } }).catch(() => {});
+      online('/api/flows/' + encodeURIComponent(id) + '/report', { method: 'POST', body: { ok: r.ok, ms: r.ms || 0, error: r.ok ? undefined : clip(r.error, 200), ...(r.ok && phrase && settings.share !== false ? { task: phrase } : {}) } }).catch(() => {});
   }
 
   // ---------- The agent's tools ----------
@@ -343,7 +344,8 @@
       const input = a.input && typeof a.input === 'object' ? { ...a.input } : {};
       if (a.keepOpen) input.keepOpen = true;
       const r = await runFlow(conversationId, f.flow, input, signal);
-      await record(id, r, f.where);
+      const ph = r.ok && conversationId !== 'view' && conversationId !== 'mcp' ? await globalThis.__vaFlowLearn(conversationId, id, a.input) : '';
+      await record(id, r, f.where, ph);
       if (r.ok) globalThis.__vaLastFlow.set(conversationId, { id, input: a.input && typeof a.input === 'object' ? a.input : {} });
       if (!r.ok)
         return fail(
@@ -533,6 +535,192 @@
     if (!all.length) return out + 'Flows: none saved yet.' + lib + ' Before working through a site by hand for a repeatable job (reading mail results, searching a shop, listing a feed), find_flows may have one.\n';
     if (rest.length) out += (here.length ? 'Other saved flows' : 'Saved flows (run_flow does the whole job in one step; find_flows with id shows one)') + ':\n' + rest.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '', r)).join('\n') + '\n';
     return out + (lib ? lib.trim() + '\n' : '');
+  };
+
+  // ---------- Which flow does this task? (looked up when a task starts) ----------
+  // Saved flows are matched here by their words; the online library answers by words and meaning (/api/resolve).
+  // The best match goes into the agent's instructions, so a fitting flow is run at the first step; when nothing fits
+  // the agent is told so and works the site out itself (and the task may later become a flow, see va-more-bg.js).
+  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show find tell give make let us our what which who how when where about any some all'.split(' '));
+  const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', headline: 'news', story: 'news', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt' };
+  const stem = (w) => (!/^[a-z]+$/.test(w) || w.length < 5 ? w : w.replace(/(ings|ing|ers|er|ies|es|ed|s)$/, (m) => (m === 'ies' ? 'y' : '')));
+  const toks = (x) => String(x || '').toLowerCase().normalize('NFKC').split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 1 && !STOP.has(w)).map(stem).map((w) => SAME[w] || w);
+  const brandsOf = (flow) => {
+    const out = new Set();
+    for (const h of flow.sites || []) for (const l of String(h).toLowerCase().split('.')) if (l.length > 2 && !['www', 'com', 'org', 'net', 'co', 'in', 'mail', 'news', 'html', 'en', 'app'].includes(l)) out.add(SAME[l] || l);
+    if ((flow.sites || []).some((h) => /mail\.google/.test(h))) out.add('gmail');
+    return out;
+  };
+  function localRank(text, host) {
+    const recs = Object.values(cache);
+    if (!recs.length) return [];
+    const q = [...new Set(toks(text))];
+    const sets = recs.map((r) => new Set([...toks([r.flow.id.replace(/-/g, ' '), r.flow.name, r.flow.description, (r.flow.tags || []).join(' '), (r.flow.sites || []).join(' ')].join(' ')), ...(r.examples || []).flatMap(toks)]));
+    const brands = new Set(recs.flatMap((r) => [...brandsOf(r.flow)]));
+    const df = new Map();
+    for (const st of sets) for (const t of st) df.set(t, (df.get(t) || 0) + 1);
+    const idf = (t) => Math.log(1 + recs.length / (1 + (df.get(t) || 0))) * (brands.has(t) ? 3 : 1);
+    const total = q.reduce((a, t) => a + idf(t), 0) || 1;
+    const named = q.some((t) => brands.has(t));
+    return recs
+      .map((r, i) => {
+        const hit = q.filter((t) => sets[i].has(t));
+        const here = host && (r.flow.sites || []).some((x) => F.hostIn(host, String(x).replace(/^www\./, ''))) ? (named ? 0.05 : 0.25) : 0;
+        const rare = hit.some((t) => brands.has(t) && (df.get(t) || 0) <= 2);
+        return { rec: r, score: hit.reduce((a, t) => a + idf(t), 0) / total + here, hits: hit, rare };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+  const verdictOf = (best, second) => {
+    if (!best) return 'none';
+    const gap = best.score - (second ? second.score : 0);
+    if ((best.score >= 0.6 && best.hits.length >= 2) || (best.rare && gap >= 0.08 && best.score >= 0.2)) return 'use';
+    return best.score >= 0.3 ? 'maybe' : 'none';
+  };
+  const hints = new Map(); // task text → Promise<hint>
+  const ready_ = []; // hints waiting for their conversation: {text, hint, at}
+  const byConv = new Map(); // conversation → hint
+  globalThis.__vaFlowHintPrefetch = (text, tabId) => {
+    text = String(text || '').trim();
+    if (!text || /^Make a reusable flow for/.test(text)) return null;
+    if (hints.has(text)) return hints.get(text);
+    const p = (async () => {
+      await ready;
+      let host = '';
+      try {
+        const t = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
+        host = t && /^https?:/.test(t.url || '') ? new URL(t.url).hostname.replace(/^www\./, '') : currentHost || '';
+      } catch {}
+      const loc = localRank(text, host);
+      const lv = verdictOf(loc[0], loc[1]);
+      const hint = { text, host, local: lv === 'none' ? null : { verdict: lv, ids: loc.filter((x) => x.score >= 0.3).slice(0, 3).map((x) => x.rec.flow.id) }, online: null, onlineChecked: false };
+      if (lv !== 'use' && settings.repo && settings.online) {
+        try {
+          const r = await online('/api/resolve', { method: 'POST', body: { task: text, site: host, limit: 4 }, timeout: 1500 });
+          hint.onlineChecked = true;
+          // A "maybe" that is well ahead of the rest is treated as the flow to try first.
+          const v = r.verdict === 'maybe' && r.best && r.best.score >= 0.45 && (r.lead || 0) >= 0.12 ? 'likely' : r.verdict;
+          if (r.verdict !== 'none' && r.best) hint.online = { verdict: v, flows: (r.candidates || [r.best]).filter((c) => !cache[c.id] && c.score >= 0.3).slice(0, 3) };
+        } catch (e) {
+          console.info('[va] flow lookup: the library did not answer in time:', clip(e.message, 120));
+        }
+      }
+      console.info('[va] flow lookup:', JSON.stringify({ task: clip(text, 60), saved: hint.local, library: hint.online && hint.online.flows.map((f) => f.id + ':' + f.score), checked: hint.onlineChecked }));
+      return hint;
+    })().catch(() => null);
+    hints.set(text, p);
+    if (hints.size > 30) hints.delete(hints.keys().next().value);
+    return p;
+  };
+  // Called just before the first model call of a new task (waits at most 1.5 s).
+  globalThis.__vaFlowHintReady = async (text) => {
+    const p = globalThis.__vaFlowHintPrefetch(text);
+    if (!p) return;
+    const hint = await Promise.race([p, new Promise((r) => setTimeout(() => r(null), 1500))]);
+    if (hint) ready_.push({ text, hint, at: Date.now() });
+  };
+  const describeFlow = (f) => f.id + ' (' + clip(f.name, 50) + (f.inputs ? '; inputs ' + clip(typeof f.inputs === 'string' ? f.inputs : Object.keys(f.inputs).join(', '), 80) : '') + ')';
+  globalThis.__vaFlowHintFor = (conversationId) => {
+    // A conversation takes the hint made just before it started (its first instructions are built right after);
+    // every conversation is marked on its first call, so a running one never takes a newer task's hint.
+    if (!byConv.has(conversationId)) {
+      while (ready_.length && Date.now() - ready_[0].at > 4000) ready_.shift();
+      byConv.set(conversationId, ready_.length ? ready_.shift().hint : null);
+      if (byConv.size > 200) byConv.delete(byConv.keys().next().value);
+    }
+    const h = byConv.get(conversationId);
+    if (!h) return '';
+    if (h.local && h.local.verdict === 'use') return 'Flow for this request: run_flow ' + h.local.ids[0] + ' (saved) as your first step, unless it clearly does not fit.\n';
+    const lines = [];
+    if (h.local) lines.push('Saved flows that may do this request: ' + h.local.ids.join(', ') + '.');
+    if (h.online) {
+      const fl = h.online.flows;
+      if (h.online.verdict === 'use' && fl[0]) lines.push('The online library has a flow for this request: ' + describeFlow(fl[0]) + (fl[0].runs ? ', ' + fl[0].ok + ' of ' + fl[0].runs + ' runs worked' : '') + '. run_flow it as your first step (it is saved on first use).');
+      else if (h.online.verdict === 'likely' && fl[0]) lines.push('The online library has a flow that probably does this request: ' + describeFlow(fl[0]) + '. If its inputs fit, run_flow it as your first step (it is saved on first use)' + (fl.length > 1 ? '; others: ' + fl.slice(1).map((f) => f.id).join(', ') : '') + '.');
+      else if (fl.length) lines.push('Online library flows that may do this request: ' + fl.map(describeFlow).join('; ') + '. find_flows with an id shows one; run_flow uses it.');
+    }
+    if (!lines.length && !h.local && !h.online) lines.push((h.onlineChecked ? 'No saved or library flow does this request' : 'No saved flow does this request') + '; do it with your own tools' + (h.onlineChecked ? ' (no need to call find_flows).' : '.'));
+    return lines.join('\n') + '\n';
+  };
+  // A task phrasing that a flow did well, with the values it was given replaced by their input names
+  // ("ask Claude {question}"), for matching later tasks: kept with the flow, and sent to the library for its flows.
+  function phrasing(task, input) {
+    let t = String(task || '');
+    for (const [k, v] of Object.entries(input || {})) if (typeof v === 'string' && v.trim().length >= 3) t = t.split(v.trim()).join('{' + k + '}');
+    t = t
+      .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '{email}')
+      .replace(/https?:\/\/\S+/g, '{link}')
+      .replace(/\b(pass(?:word|code)?|otp|pin|cvv)\b\s*(?:is|:|=)?\s*\S+/gi, '$1 {secret}')
+      .replace(/[₹$€£]?\s?\d[\d,.\s-]{2,}\d/g, '{number}')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return t && t.length <= 140 && t.split(' ').length <= 16 ? t : '';
+  }
+  globalThis.__vaFlowLearn = async (conversationId, id, input) => {
+    try {
+      const said = (await globalThis.__vaUserSaid?.(conversationId)) || '';
+      const first = said.split(' | ')[0];
+      const ph = phrasing(first, input);
+      if (!ph) return;
+      await update((all) => {
+        const rec = all[id];
+        if (!rec) return;
+        rec.examples = [ph, ...(rec.examples || []).filter((x) => x !== ph)].slice(0, 10);
+      });
+      return ph;
+    } catch {}
+  };
+
+  // ---------- The library for common tasks (used by va-more-bg.js) ----------
+  const toast = async (title, message) => {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    if (t) await chrome.tabs.sendMessage(t.id, { type: 'va.toast', title, message: clip(message, 600) }).catch(() => {});
+  };
+  globalThis.__vaToast = toast;
+  // Does the library have a flow for this kind of task? {flow summary, verdict} or null.
+  globalThis.__vaLibraryFind = async (task, site) => {
+    await ready;
+    if (!settings.repo || !settings.online) return null;
+    try {
+      const r = await online('/api/resolve', { method: 'POST', body: { task, site, limit: 3 }, timeout: 6000 });
+      return r.verdict === 'use' && r.best ? r.best : null;
+    } catch (e) {
+      console.info('[va] library lookup failed:', clip(e.message, 120));
+      return null;
+    }
+  };
+  // Save a library flow for use: read-only flows at once; flows that click, type or use AI after the user agrees.
+  globalThis.__vaLibraryAdopt = async (id, conversationId) => {
+    if (cache[id]) return { ok: true, already: true };
+    const r = await online('/api/flows/' + encodeURIComponent(id), { timeout: 8000 });
+    const v = F.validate(r.flow);
+    if (!v.ok) return { ok: false, error: 'not valid: ' + v.errors.join('; ') };
+    if (v.acts || v.usesAI) {
+      const d = F.describe(r.flow);
+      const answer = await askUser(conversationId, {
+        title: 'Use a flow from the library?',
+        message: 'For a task you repeat, the library has “' + r.flow.name + '” (' + id + '). It opens ' + d.sites.join(', ') + (v.acts ? ' and clicks or types there' : '') + (v.usesAI ? ' and uses AI' : '') + '. It cannot pay, send, post or delete.',
+        yes: 'Use it',
+        no: 'No',
+        flowId: id,
+      }, 24 * 3600 * 1000);
+      if (answer !== 'yes') return { ok: false, declined: true };
+    }
+    await update((all) => {
+      all[id] = { flow: r.flow, source: 'online', approved: true, adopted: true, savedAt: new Date().toISOString(), runs: 0, ok: 0, fail: 0 };
+    });
+    return { ok: true };
+  };
+  // Tell the library that people want a flow for this kind of task (kind, a short generic name, the site; nothing else).
+  globalThis.__vaWanted = async (kind, name, site) => {
+    await ready;
+    if (!settings.repo || !settings.online || !settings.share) return null;
+    let client = (await chrome.storage.local.get('va.clientId'))['va.clientId'];
+    if (!client) {
+      client = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      await chrome.storage.local.set({ 'va.clientId': client });
+    }
+    return online('/api/wanted', { method: 'POST', body: { kind, name, site, client }, timeout: 6000 }).catch(() => null);
   };
 
   // ---------- Apps on this computer (MCP) ----------

@@ -75,6 +75,11 @@
     </details>
   </div>
   <h2>Suggested flows</h2>
+  <div class="card" style="display:grid;gap:8px;margin-bottom:10px">
+    <label class="row"><input type="checkbox" id="autoFlows"> <span><strong>Make flows automatically for tasks I repeat</strong><br><span class="meta">When you do the same kind of task twice, the agent first looks in the flow library and uses a flow from there; if there is none, it writes and tests one in the background (at most 3 a day).</span></span></label>
+    <label class="row"><input type="checkbox" id="flowLearn"> <span><strong>Help the flow library find flows for tasks</strong><br><span class="meta">Sends the library which kinds of task have no flow yet (a short name and the site) and, after a library flow worked, your request with its values taken out (“ask Claude {question}”). Never names, numbers, addresses or what you asked about.</span></span></label>
+    <div id="autoLog" class="meta"></div>
+  </div>
   <div id="patterns"></div>
   <h2>Views</h2>
   <p class="sub" style="margin-bottom:10px">Pages the agent made to show results (ask it, for example, “show my YouTube feed as cards”). Views that come from a flow refresh each time you open them.</p>

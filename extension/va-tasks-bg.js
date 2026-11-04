@@ -724,6 +724,7 @@
       (lines.length ? "The user's recent tasks with you (newest first; recall gives details or a whole conversation):\n" + lines.join('\n') + '\n' : '') +
       'If the user refers to earlier work, continue from it instead of starting over.\n' +
       (globalThis.__vaFlowsContext?.() || '') +
+      (globalThis.__vaFlowHintFor?.(conversationId) || '') +
       (globalThis.__vaMemoryContext?.() || '') +
       (flags.fullHistory ? '' : 'Older page observations in this task are shortened to save cost (look_back reopens them). As you go, write a one-line note of what you found and what is left, so nothing is lost.\n') +
       '</voice-agent-context>'
@@ -813,7 +814,13 @@
       const v = JSON.parse(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
       if (typeof v.worth !== 'boolean') return;
       if (memoryOn && Array.isArray(v.facts) && v.facts.length) globalThis.__vaMemoryOffer?.(conversationId, v.facts, 'task', said || request);
-      const tabId = progress[conversationId] && progress[conversationId].tab;
+      let tabId = progress[conversationId] && progress[conversationId].tab;
+      if (!Number.isInteger(tabId)) {
+        // A quick task may finish before its progress names a tab: use the tab the task worked in.
+        const at = (await chrome.storage.local.get('va.agentTabs'))['va.agentTabs'] || {};
+        const hit = Object.entries(at).find(([, c]) => c === conversationId);
+        if (hit) tabId = Number(hit[0]);
+      }
       const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
       const site = (() => {
         try {

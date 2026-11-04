@@ -8,7 +8,11 @@
 //   POST   /api/flows        {flow}         {id, version}            publish (x-contributor header); new id, or a new version of your own
 //   POST   /api/flows/:id/report {ok, ms}   {ok}                     tell the library a run worked or failed
 //   DELETE /api/flows/:id                   {ok}                     the publisher (x-contributor) or the admin (Bearer ADMIN_TOKEN)
+//   POST   /api/resolve {task, site?}       {verdict, best, candidates}  which flow does this task: "use", "maybe" or "none"
+//   POST   /api/wanted {kind, name, site, client}  {kind, n, clients}  a common task with no flow yet (no personal text)
+//   GET    /api/wanted?site=&limit=         {wanted: [...]}           what agents could build next, most wanted first
 import './flows-core.js';
+import { rank, verdict, embed, embedKind, pack, cos, unpack, tokens, scrub, flowText, forget } from './match.js';
 
 const F = globalThis.VAFlows;
 const CORS = {
@@ -122,7 +126,26 @@ async function publish(env, req, ip) {
     ).bind(id, owner, def.name, def.description, JSON.stringify([...allSites]), JSON.stringify(def.tags || []), d.inputs, v.acts ? 1 : 0, v.usesAI ? 1 : 0, JSON.stringify(v.calls), version, JSON.stringify(def), author, searchText, now),
     env.DB.prepare('INSERT INTO flow_versions (id, version, def, created) VALUES (?1, ?2, ?3, ?4)').bind(id, version, JSON.stringify(def), now),
   ]);
-  return reply({ id, version }, 201);
+  // Its embedding (for /api/resolve), and the wanted tasks it now covers.
+  const done = [];
+  try {
+    const kind = embedKind(env);
+    const text = flowText({ name: def.name, description: def.description, tags: JSON.stringify(def.tags || []), sites: JSON.stringify([...allSites]), inputs: d.inputs });
+    const fv = kind ? (await embed(env, [text]))?.[0] : null;
+    if (fv) await env.DB.prepare('INSERT OR REPLACE INTO flow_vectors (id, model, vec, updated) VALUES (?1, ?2, ?3, ?4)').bind(id, kind, pack(fv), now).run();
+    const open = (await env.DB.prepare('SELECT kind, name, sites FROM wanted WHERE done_by IS NULL ORDER BY clients DESC, n DESC LIMIT 200').all()).results;
+    const ft = new Set([...tokens(text), ...tokens(id.replace(/-/g, ' '))]);
+    const wv = fv && open.length ? await embed(env, open.map((w) => w.name)) : null;
+    open.forEach((w, i) => {
+      const wt = [...new Set(tokens(w.name + ' ' + w.kind.replace(/-/g, ' ')))];
+      const overlap = wt.length ? wt.filter((t) => ft.has(t)).length / wt.length : 0;
+      const sim = wv ? cos(fv, wv[i]) : 0;
+      if (w.kind === id || overlap >= 0.75 || sim >= (kind === 'ai' ? 0.78 : 0.8)) done.push(w.kind);
+    });
+    if (done.length) await env.DB.batch(done.map((k) => env.DB.prepare('UPDATE wanted SET done_by = ?2 WHERE kind = ?1').bind(k, id)));
+  } catch {}
+  forget();
+  return reply({ id, version, ...(done.length ? { covers: done } : {}) }, 201);
 }
 
 async function getFlow(env, id, version) {
@@ -146,7 +169,25 @@ async function report(env, req, id, ip) {
   } catch {}
   const ok = b && b.ok === true ? 1 : 0;
   const r = await env.DB.prepare('UPDATE flows SET runs = runs + 1, ok = ok + ?2 WHERE id = ?1 AND hidden = 0').bind(id, ok).run();
-  return r.meta.changes ? reply({ ok: true }) : bad('not found', 404);
+  if (!r.meta.changes) return bad('not found', 404);
+  // A phrasing that this flow did well: kept (scrubbed, at most 30 per flow) to match later tasks by meaning.
+  let learned = false;
+  const kind = embedKind(env);
+  const text = ok && kind && typeof b.task === 'string' ? scrub(b.task) : '';
+  if (text && (await allow(env, 'learn:' + ip, 120))) {
+    const now = new Date().toISOString();
+    const had = await env.DB.prepare('UPDATE flow_examples SET n = n + 1, updated = ?4 WHERE id = ?1 AND text = ?2 AND model = ?3').bind(id, text, kind, now).run();
+    if (!had.meta.changes) {
+      const v = (await embed(env, [text]))?.[0];
+      if (v) {
+        await env.DB.prepare('INSERT INTO flow_examples (id, text, model, vec, n, updated) VALUES (?1, ?2, ?3, ?4, 1, ?5)').bind(id, text, kind, pack(v), now).run();
+        await env.DB.prepare('DELETE FROM flow_examples WHERE id = ?1 AND model = ?2 AND text NOT IN (SELECT text FROM flow_examples WHERE id = ?1 AND model = ?2 ORDER BY n DESC, updated DESC LIMIT 30)').bind(id, kind).run();
+        forget();
+      }
+    }
+    learned = true;
+  }
+  return reply({ ok: true, ...(learned ? { learned: true } : {}) });
 }
 
 async function remove(env, req, id) {
@@ -160,6 +201,68 @@ async function remove(env, req, id) {
   return reply({ ok: true });
 }
 
+const hostOf = (s) => String(s || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#:]/)[0].slice(0, 100);
+async function readJson(req, max = 8000) {
+  const t = await req.text();
+  if (t.length > max) throw Object.assign(new Error('too large'), { status: 413 });
+  try {
+    return JSON.parse(t || '{}');
+  } catch {
+    throw Object.assign(new Error('the body must be JSON'), { status: 400 });
+  }
+}
+
+// Which flow does this task? The task text is used for this answer only and not stored.
+async function resolve(env, req) {
+  const b = await readJson(req);
+  const task = String(b.task || '').trim().slice(0, 500);
+  if (!task) return bad('give {task: "what the user asked", site?: "the site they are on"}');
+  const limit = Math.min(10, Math.max(1, Number(b.limit) || 5));
+  const ranked = await rank(env, task, b.site, limit);
+  const v = verdict(ranked[0], ranked[1], embedKind(env));
+  const item = (x) => ({ ...summary(x.row), score: x.score, why: { words: x.hits, meaning: x.meaning, ...(x.example ? { like: x.example } : {}) } });
+  const lead = ranked[0] ? +(ranked[0].score - (ranked[1] ? ranked[1].score : 0)).toFixed(3) : 0;
+  const res = { verdict: v, best: v === 'none' ? null : item(ranked[0]), lead, candidates: ranked.filter((x) => x.score > 0.15).map(item), matching: embedKind(env) || 'words' };
+  if (v === 'none') res.next = 'No flow does this yet. Do the task with your own tools; if it is repeatable, write a flow afterwards and publish it (POST /api/flows), and say it is wanted (POST /api/wanted).';
+  return reply(res);
+}
+
+async function wantedAdd(env, req, ip) {
+  if (!(await allow(env, 'want:' + ip, 120))) return bad('too many requests this hour', 429);
+  const b = await readJson(req);
+  const kind = String(b.kind || '').toLowerCase().trim();
+  if (!/^[a-z0-9][a-z0-9-]{2,47}$/.test(kind)) return bad('kind: a short lowercase id such as "ask-chatgpt" or "youtube-search"');
+  const name = scrub(String(b.name || '').slice(0, 80)).replace(/\{[a-z]+\}/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (name.length < 3) return bad('name: a short generic title such as "Search YouTube" (no personal details)');
+  const site = hostOf(b.site);
+  const client = /^[A-Za-z0-9_-]{16,64}$/.test(String(b.client || '')) ? await sha256('c:' + b.client) : await sha256('ip:' + ip);
+  const now = new Date().toISOString();
+  const row = await env.DB.prepare('SELECT sites FROM wanted WHERE kind = ?1').bind(kind).first();
+  const sites = new Set(row ? JSON.parse(row.sites) : []);
+  if (site && sites.size < 5) sites.add(site);
+  const fresh = (await env.DB.prepare('INSERT OR IGNORE INTO wanted_seen (kind, client) VALUES (?1, ?2)').bind(kind, client).run()).meta.changes;
+  await env.DB.prepare(
+    'INSERT INTO wanted (kind, name, sites, n, clients, first, last) VALUES (?1, ?2, ?3, 1, 1, ?4, ?4) ON CONFLICT (kind) DO UPDATE SET n = n + 1, clients = clients + ?5, sites = ?3, last = ?4',
+  ).bind(kind, name, JSON.stringify([...sites]), now, fresh ? 1 : 0).run();
+  // Already covered by a flow?
+  const ranked = await rank(env, name + ' ' + kind.replace(/-/g, ' '), site, 2);
+  const v = verdict(ranked[0], ranked[1], embedKind(env));
+  // Covered when a flow clearly fits (a sure match, or one well ahead of the rest).
+  const clear = v === 'use' || (v === 'maybe' && ranked[0].score >= 0.45 && ranked[0].score - (ranked[1] ? ranked[1].score : 0) >= 0.12);
+  if (clear) await env.DB.prepare('UPDATE wanted SET done_by = ?2 WHERE kind = ?1 AND done_by IS NULL').bind(kind, ranked[0].row.id).run();
+  const w = await env.DB.prepare('SELECT kind, name, sites, n, clients, done_by FROM wanted WHERE kind = ?1').bind(kind).first();
+  return reply({ kind, name: w.name, n: w.n, clients: w.clients, sites: JSON.parse(w.sites), ...(w.done_by ? { coveredBy: w.done_by } : {}) });
+}
+
+async function wantedList(env, url) {
+  const site = hostOf(url.searchParams.get('site'));
+  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 20));
+  const all = url.searchParams.get('all') === '1';
+  let rows = (await env.DB.prepare('SELECT kind, name, sites, n, clients, first, last, done_by FROM wanted' + (all ? '' : ' WHERE done_by IS NULL') + ' ORDER BY clients DESC, n DESC, last DESC LIMIT 300').all()).results;
+  if (site) rows = rows.filter((r) => JSON.parse(r.sites).some((s) => s === site || site.endsWith('.' + s) || s.endsWith('.' + site)));
+  return reply({ wanted: rows.slice(0, limit).map((r) => ({ kind: r.kind, name: r.name, sites: JSON.parse(r.sites), asked: r.n, people: r.clients, first: r.first, last: r.last, ...(r.done_by ? { doneBy: r.done_by } : {}) })) }, 200, { 'cache-control': 'public, max-age=30' });
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -169,13 +272,19 @@ export default {
       const p = url.pathname.replace(/\/+$/, '');
       if (p === '/api/health') {
         const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM flows WHERE hidden = 0').first();
-        return reply({ ok: true, flows: r ? r.n : 0, format: 'voice-agent-flow/' + F.VERSION });
+        return reply({ ok: true, flows: r ? r.n : 0, format: 'voice-agent-flow/' + F.VERSION, matching: embedKind(env) || 'words' });
       }
       if (p === '/api/flows' && req.method === 'GET') {
         if (!(await allow(env, 'get:' + ip, 3000))) return bad('too many requests this hour', 429);
         return search(env, url);
       }
       if (p === '/api/flows' && req.method === 'POST') return publish(env, req, ip);
+      if (p === '/api/resolve' && req.method === 'POST') {
+        if (!(await allow(env, 'res:' + ip, 3000))) return bad('too many requests this hour', 429);
+        return await resolve(env, req);
+      }
+      if (p === '/api/wanted' && req.method === 'POST') return await wantedAdd(env, req, ip);
+      if (p === '/api/wanted' && req.method === 'GET') return wantedList(env, url);
       // Sites with flows (each site's flows work like a small tool set for that site), and one site's flows.
       if (p === '/api/sites') {
         const rows = (await env.DB.prepare('SELECT sites, runs, ok FROM flows WHERE hidden = 0').all()).results;
@@ -198,6 +307,7 @@ export default {
       if (p.startsWith('/api/')) return bad('unknown endpoint', 404);
       return env.ASSETS.fetch(req);
     } catch (e) {
+      if (e && e.status) return bad(e.message, e.status);
       return bad('server error: ' + String((e && e.message) || e).slice(0, 200), 500);
     }
   },

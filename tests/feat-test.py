@@ -53,7 +53,7 @@ try:
     if pg.locator('text=Connect securely').count():
         pg.fill('input[type=password]', KEY); pg.click('text=Connect securely'); pg.wait_for_timeout(4000)
     pg.close()
-    sw.evaluate("chrome.storage.local.get('nb.settings').then(r=>chrome.storage.local.set({'nb.settings':{...r['nb.settings'],turnCap:80,defaultMode:'auto'}}))")
+    sw.evaluate("chrome.storage.local.get('nb.settings').then(r=>chrome.storage.local.set({'va.flows.auto':false,'nb.settings':{...r['nb.settings'],turnCap:80,defaultMode:'auto'}}))")  # the manual suggestion path (auto-test.py covers automatic flows)
     st = sw.evaluate("chrome.storage.local.get(['va.flows','va.starters']).then(r=>({flows:Object.keys(r['va.flows']||{}),starters:r['va.starters']||[]}))")
     check('a new install already has the ask-chatgpt and ask-claude flows', {'ask-chatgpt','ask-claude'} <= set(st['flows']) and len(st['starters']) == 2, st)
     # flows used below (each is test-run on the replicas when saved)

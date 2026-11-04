@@ -1822,6 +1822,7 @@
       (lines.length ? "The user's recent tasks with you (newest first; recall gives details or a whole conversation):\n" + lines.join('\n') + '\n' : '') +
       'If the user refers to earlier work, continue from it instead of starting over.\n' +
       (globalThis.__vaFlowsContext?.() || '') +
+      (globalThis.__vaFlowHintFor?.(conversationId) || '') +
       (globalThis.__vaMemoryContext?.() || '') +
       (flags.fullHistory ? '' : 'Older page observations in this task are shortened to save cost (look_back reopens them). As you go, write a one-line note of what you found and what is left, so nothing is lost.\n') +
       '</voice-agent-context>'
@@ -1911,7 +1912,13 @@
       const v = JSON.parse(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
       if (typeof v.worth !== 'boolean') return;
       if (memoryOn && Array.isArray(v.facts) && v.facts.length) globalThis.__vaMemoryOffer?.(conversationId, v.facts, 'task', said || request);
-      const tabId = progress[conversationId] && progress[conversationId].tab;
+      let tabId = progress[conversationId] && progress[conversationId].tab;
+      if (!Number.isInteger(tabId)) {
+        // A quick task may finish before its progress names a tab: use the tab the task worked in.
+        const at = (await chrome.storage.local.get('va.agentTabs'))['va.agentTabs'] || {};
+        const hit = Object.entries(at).find(([, c]) => c === conversationId);
+        if (hit) tabId = Number(hit[0]);
+      }
       const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
       const site = (() => {
         try {
@@ -2091,11 +2098,12 @@
   let cache = {}; // the saved flows, kept in memory for the instructions note
   let settings = { repo: DEFAULT_REPO, online: true, token: '', author: '' };
   const load = async () => {
-    const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.token', 'va.flows.author']);
+    const r = await chrome.storage.local.get(['va.flows', 'va.flows.repo', 'va.flows.online', 'va.flows.token', 'va.flows.author', 'va.flows.learn']);
     cache = r['va.flows'] && typeof r['va.flows'] === 'object' ? r['va.flows'] : {};
     settings = {
       repo: String(r['va.flows.repo'] ?? DEFAULT_REPO).trim().replace(/\/+$/, ''),
       online: r['va.flows.online'] !== false,
+      share: r['va.flows.learn'] !== false, // send short, anonymised task phrasings with run reports (helps matching)
       token: r['va.flows.token'] || '',
       author: clip(r['va.flows.author'] || '', 40),
     };
@@ -2313,7 +2321,7 @@
   const staticShape = (flow) => (flow.output && typeof flow.output === 'object' && !Array.isArray(flow.output) ? shapeOf(flow.output) : null);
   globalThis.__vaFlowShape = (id) => (cache[id] && (cache[id].shape || staticShape(cache[id].flow))) || null;
   globalThis.__vaLastFlow = new Map(); // conversation → the last flow it ran {id, input}
-  async function record(id, r, where) {
+  async function record(id, r, where, phrase) {
     await update((all) => {
       const rec = all[id];
       if (!rec) return;
@@ -2327,7 +2335,7 @@
       rec.lastRun = new Date().toISOString();
     });
     if (where === 'online' || (cache[id] && cache[id].source === 'online'))
-      online('/api/flows/' + encodeURIComponent(id) + '/report', { method: 'POST', body: { ok: r.ok, ms: r.ms || 0, error: r.ok ? undefined : clip(r.error, 200) } }).catch(() => {});
+      online('/api/flows/' + encodeURIComponent(id) + '/report', { method: 'POST', body: { ok: r.ok, ms: r.ms || 0, error: r.ok ? undefined : clip(r.error, 200), ...(r.ok && phrase && settings.share !== false ? { task: phrase } : {}) } }).catch(() => {});
   }
 
   // ---------- The agent's tools ----------
@@ -2411,7 +2419,8 @@
       const input = a.input && typeof a.input === 'object' ? { ...a.input } : {};
       if (a.keepOpen) input.keepOpen = true;
       const r = await runFlow(conversationId, f.flow, input, signal);
-      await record(id, r, f.where);
+      const ph = r.ok && conversationId !== 'view' && conversationId !== 'mcp' ? await globalThis.__vaFlowLearn(conversationId, id, a.input) : '';
+      await record(id, r, f.where, ph);
       if (r.ok) globalThis.__vaLastFlow.set(conversationId, { id, input: a.input && typeof a.input === 'object' ? a.input : {} });
       if (!r.ok)
         return fail(
@@ -2601,6 +2610,192 @@
     if (!all.length) return out + 'Flows: none saved yet.' + lib + ' Before working through a site by hand for a repeatable job (reading mail results, searching a shop, listing a feed), find_flows may have one.\n';
     if (rest.length) out += (here.length ? 'Other saved flows' : 'Saved flows (run_flow does the whole job in one step; find_flows with id shows one)') + ':\n' + rest.map((r) => line(r.flow, r.fail && !r.ok ? ' [last run failed]' : '', r)).join('\n') + '\n';
     return out + (lib ? lib.trim() + '\n' : '');
+  };
+
+  // ---------- Which flow does this task? (looked up when a task starts) ----------
+  // Saved flows are matched here by their words; the online library answers by words and meaning (/api/resolve).
+  // The best match goes into the agent's instructions, so a fitting flow is run at the first step; when nothing fits
+  // the agent is told so and works the site out itself (and the task may later become a flow, see va-more-bg.js).
+  const STOP = new Set('a an the and or of to in on for at by with from is are be me my i you your it this that these those please can could would will do does did get show find tell give make let us our what which who how when where about any some all'.split(' '));
+  const SAME = { find: 'search', look: 'search', lookup: 'search', seek: 'search', query: 'search', email: 'mail', mail: 'mail', inbox: 'mail', video: 'video', vid: 'video', cost: 'price', rate: 'price', cheap: 'price', cheapest: 'price', headline: 'news', story: 'news', feed: 'feed', home: 'feed', homepage: 'feed', recommend: 'feed', summary: 'summar', summarize: 'summar', summarise: 'summar', wiki: 'wikipedia', yt: 'youtube', gpt: 'chatgpt', openai: 'chatgpt' };
+  const stem = (w) => (!/^[a-z]+$/.test(w) || w.length < 5 ? w : w.replace(/(ings|ing|ers|er|ies|es|ed|s)$/, (m) => (m === 'ies' ? 'y' : '')));
+  const toks = (x) => String(x || '').toLowerCase().normalize('NFKC').split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 1 && !STOP.has(w)).map(stem).map((w) => SAME[w] || w);
+  const brandsOf = (flow) => {
+    const out = new Set();
+    for (const h of flow.sites || []) for (const l of String(h).toLowerCase().split('.')) if (l.length > 2 && !['www', 'com', 'org', 'net', 'co', 'in', 'mail', 'news', 'html', 'en', 'app'].includes(l)) out.add(SAME[l] || l);
+    if ((flow.sites || []).some((h) => /mail\.google/.test(h))) out.add('gmail');
+    return out;
+  };
+  function localRank(text, host) {
+    const recs = Object.values(cache);
+    if (!recs.length) return [];
+    const q = [...new Set(toks(text))];
+    const sets = recs.map((r) => new Set([...toks([r.flow.id.replace(/-/g, ' '), r.flow.name, r.flow.description, (r.flow.tags || []).join(' '), (r.flow.sites || []).join(' ')].join(' ')), ...(r.examples || []).flatMap(toks)]));
+    const brands = new Set(recs.flatMap((r) => [...brandsOf(r.flow)]));
+    const df = new Map();
+    for (const st of sets) for (const t of st) df.set(t, (df.get(t) || 0) + 1);
+    const idf = (t) => Math.log(1 + recs.length / (1 + (df.get(t) || 0))) * (brands.has(t) ? 3 : 1);
+    const total = q.reduce((a, t) => a + idf(t), 0) || 1;
+    const named = q.some((t) => brands.has(t));
+    return recs
+      .map((r, i) => {
+        const hit = q.filter((t) => sets[i].has(t));
+        const here = host && (r.flow.sites || []).some((x) => F.hostIn(host, String(x).replace(/^www\./, ''))) ? (named ? 0.05 : 0.25) : 0;
+        const rare = hit.some((t) => brands.has(t) && (df.get(t) || 0) <= 2);
+        return { rec: r, score: hit.reduce((a, t) => a + idf(t), 0) / total + here, hits: hit, rare };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+  const verdictOf = (best, second) => {
+    if (!best) return 'none';
+    const gap = best.score - (second ? second.score : 0);
+    if ((best.score >= 0.6 && best.hits.length >= 2) || (best.rare && gap >= 0.08 && best.score >= 0.2)) return 'use';
+    return best.score >= 0.3 ? 'maybe' : 'none';
+  };
+  const hints = new Map(); // task text → Promise<hint>
+  const ready_ = []; // hints waiting for their conversation: {text, hint, at}
+  const byConv = new Map(); // conversation → hint
+  globalThis.__vaFlowHintPrefetch = (text, tabId) => {
+    text = String(text || '').trim();
+    if (!text || /^Make a reusable flow for/.test(text)) return null;
+    if (hints.has(text)) return hints.get(text);
+    const p = (async () => {
+      await ready;
+      let host = '';
+      try {
+        const t = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
+        host = t && /^https?:/.test(t.url || '') ? new URL(t.url).hostname.replace(/^www\./, '') : currentHost || '';
+      } catch {}
+      const loc = localRank(text, host);
+      const lv = verdictOf(loc[0], loc[1]);
+      const hint = { text, host, local: lv === 'none' ? null : { verdict: lv, ids: loc.filter((x) => x.score >= 0.3).slice(0, 3).map((x) => x.rec.flow.id) }, online: null, onlineChecked: false };
+      if (lv !== 'use' && settings.repo && settings.online) {
+        try {
+          const r = await online('/api/resolve', { method: 'POST', body: { task: text, site: host, limit: 4 }, timeout: 1500 });
+          hint.onlineChecked = true;
+          // A "maybe" that is well ahead of the rest is treated as the flow to try first.
+          const v = r.verdict === 'maybe' && r.best && r.best.score >= 0.45 && (r.lead || 0) >= 0.12 ? 'likely' : r.verdict;
+          if (r.verdict !== 'none' && r.best) hint.online = { verdict: v, flows: (r.candidates || [r.best]).filter((c) => !cache[c.id] && c.score >= 0.3).slice(0, 3) };
+        } catch (e) {
+          console.info('[va] flow lookup: the library did not answer in time:', clip(e.message, 120));
+        }
+      }
+      console.info('[va] flow lookup:', JSON.stringify({ task: clip(text, 60), saved: hint.local, library: hint.online && hint.online.flows.map((f) => f.id + ':' + f.score), checked: hint.onlineChecked }));
+      return hint;
+    })().catch(() => null);
+    hints.set(text, p);
+    if (hints.size > 30) hints.delete(hints.keys().next().value);
+    return p;
+  };
+  // Called just before the first model call of a new task (waits at most 1.5 s).
+  globalThis.__vaFlowHintReady = async (text) => {
+    const p = globalThis.__vaFlowHintPrefetch(text);
+    if (!p) return;
+    const hint = await Promise.race([p, new Promise((r) => setTimeout(() => r(null), 1500))]);
+    if (hint) ready_.push({ text, hint, at: Date.now() });
+  };
+  const describeFlow = (f) => f.id + ' (' + clip(f.name, 50) + (f.inputs ? '; inputs ' + clip(typeof f.inputs === 'string' ? f.inputs : Object.keys(f.inputs).join(', '), 80) : '') + ')';
+  globalThis.__vaFlowHintFor = (conversationId) => {
+    // A conversation takes the hint made just before it started (its first instructions are built right after);
+    // every conversation is marked on its first call, so a running one never takes a newer task's hint.
+    if (!byConv.has(conversationId)) {
+      while (ready_.length && Date.now() - ready_[0].at > 4000) ready_.shift();
+      byConv.set(conversationId, ready_.length ? ready_.shift().hint : null);
+      if (byConv.size > 200) byConv.delete(byConv.keys().next().value);
+    }
+    const h = byConv.get(conversationId);
+    if (!h) return '';
+    if (h.local && h.local.verdict === 'use') return 'Flow for this request: run_flow ' + h.local.ids[0] + ' (saved) as your first step, unless it clearly does not fit.\n';
+    const lines = [];
+    if (h.local) lines.push('Saved flows that may do this request: ' + h.local.ids.join(', ') + '.');
+    if (h.online) {
+      const fl = h.online.flows;
+      if (h.online.verdict === 'use' && fl[0]) lines.push('The online library has a flow for this request: ' + describeFlow(fl[0]) + (fl[0].runs ? ', ' + fl[0].ok + ' of ' + fl[0].runs + ' runs worked' : '') + '. run_flow it as your first step (it is saved on first use).');
+      else if (h.online.verdict === 'likely' && fl[0]) lines.push('The online library has a flow that probably does this request: ' + describeFlow(fl[0]) + '. If its inputs fit, run_flow it as your first step (it is saved on first use)' + (fl.length > 1 ? '; others: ' + fl.slice(1).map((f) => f.id).join(', ') : '') + '.');
+      else if (fl.length) lines.push('Online library flows that may do this request: ' + fl.map(describeFlow).join('; ') + '. find_flows with an id shows one; run_flow uses it.');
+    }
+    if (!lines.length && !h.local && !h.online) lines.push((h.onlineChecked ? 'No saved or library flow does this request' : 'No saved flow does this request') + '; do it with your own tools' + (h.onlineChecked ? ' (no need to call find_flows).' : '.'));
+    return lines.join('\n') + '\n';
+  };
+  // A task phrasing that a flow did well, with the values it was given replaced by their input names
+  // ("ask Claude {question}"), for matching later tasks: kept with the flow, and sent to the library for its flows.
+  function phrasing(task, input) {
+    let t = String(task || '');
+    for (const [k, v] of Object.entries(input || {})) if (typeof v === 'string' && v.trim().length >= 3) t = t.split(v.trim()).join('{' + k + '}');
+    t = t
+      .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '{email}')
+      .replace(/https?:\/\/\S+/g, '{link}')
+      .replace(/\b(pass(?:word|code)?|otp|pin|cvv)\b\s*(?:is|:|=)?\s*\S+/gi, '$1 {secret}')
+      .replace(/[₹$€£]?\s?\d[\d,.\s-]{2,}\d/g, '{number}')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return t && t.length <= 140 && t.split(' ').length <= 16 ? t : '';
+  }
+  globalThis.__vaFlowLearn = async (conversationId, id, input) => {
+    try {
+      const said = (await globalThis.__vaUserSaid?.(conversationId)) || '';
+      const first = said.split(' | ')[0];
+      const ph = phrasing(first, input);
+      if (!ph) return;
+      await update((all) => {
+        const rec = all[id];
+        if (!rec) return;
+        rec.examples = [ph, ...(rec.examples || []).filter((x) => x !== ph)].slice(0, 10);
+      });
+      return ph;
+    } catch {}
+  };
+
+  // ---------- The library for common tasks (used by va-more-bg.js) ----------
+  const toast = async (title, message) => {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    if (t) await chrome.tabs.sendMessage(t.id, { type: 'va.toast', title, message: clip(message, 600) }).catch(() => {});
+  };
+  globalThis.__vaToast = toast;
+  // Does the library have a flow for this kind of task? {flow summary, verdict} or null.
+  globalThis.__vaLibraryFind = async (task, site) => {
+    await ready;
+    if (!settings.repo || !settings.online) return null;
+    try {
+      const r = await online('/api/resolve', { method: 'POST', body: { task, site, limit: 3 }, timeout: 6000 });
+      return r.verdict === 'use' && r.best ? r.best : null;
+    } catch (e) {
+      console.info('[va] library lookup failed:', clip(e.message, 120));
+      return null;
+    }
+  };
+  // Save a library flow for use: read-only flows at once; flows that click, type or use AI after the user agrees.
+  globalThis.__vaLibraryAdopt = async (id, conversationId) => {
+    if (cache[id]) return { ok: true, already: true };
+    const r = await online('/api/flows/' + encodeURIComponent(id), { timeout: 8000 });
+    const v = F.validate(r.flow);
+    if (!v.ok) return { ok: false, error: 'not valid: ' + v.errors.join('; ') };
+    if (v.acts || v.usesAI) {
+      const d = F.describe(r.flow);
+      const answer = await askUser(conversationId, {
+        title: 'Use a flow from the library?',
+        message: 'For a task you repeat, the library has “' + r.flow.name + '” (' + id + '). It opens ' + d.sites.join(', ') + (v.acts ? ' and clicks or types there' : '') + (v.usesAI ? ' and uses AI' : '') + '. It cannot pay, send, post or delete.',
+        yes: 'Use it',
+        no: 'No',
+        flowId: id,
+      }, 24 * 3600 * 1000);
+      if (answer !== 'yes') return { ok: false, declined: true };
+    }
+    await update((all) => {
+      all[id] = { flow: r.flow, source: 'online', approved: true, adopted: true, savedAt: new Date().toISOString(), runs: 0, ok: 0, fail: 0 };
+    });
+    return { ok: true };
+  };
+  // Tell the library that people want a flow for this kind of task (kind, a short generic name, the site; nothing else).
+  globalThis.__vaWanted = async (kind, name, site) => {
+    await ready;
+    if (!settings.repo || !settings.online || !settings.share) return null;
+    let client = (await chrome.storage.local.get('va.clientId'))['va.clientId'];
+    if (!client) {
+      client = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      await chrome.storage.local.set({ 'va.clientId': client });
+    }
+    return online('/api/wanted', { method: 'POST', body: { kind, name, site, client }, timeout: 6000 }).catch(() => null);
   };
 
   // ---------- Apps on this computer (MCP) ----------
@@ -3010,6 +3205,7 @@
   globalThis.__vaPatternSeen = async (conversationId, kind, name, request, site, worth) => {
     kind = String(kind || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
     if (!kind || kind.length < 3 || VAGUE.has(kind)) return;
+    if (/^Make a reusable flow for/.test(String(request || ''))) return; // the flow-making task itself
     const flows = (await chrome.storage.local.get('va.flows'))['va.flows'] || {};
     const words = kind.split('-').filter((w) => w.length > 2);
     const covered = Object.values(flows).some((r) => {
@@ -3029,11 +3225,52 @@
       // Repeated, and judged repeatable at least once (one-off chats that happen to recur are not suggested).
       if (worth) x.worthy = true;
       x.suggest = x.count >= THRESHOLD && !!x.worthy && !covered && !x.dismissed && !x.flowRequested;
+      if (x.worthy && !covered && !x.wantedSent) (x.wantedSent = true), (x.reportWanted = true);
       return { ...x };
     });
     if (p.suggest) console.info('[va] common task:', p.kind, '(' + p.count + ' times) could be a flow');
+    // The library hears that this kind of task has no flow here (kind, name, site only), once per kind.
+    if (p.reportWanted) {
+      await edit('va.patterns', {}, (all) => void (all[kind] && delete all[kind].reportWanted));
+      globalThis.__vaWanted?.(p.kind, p.name, p.sites[0] || '').then((r) => r && console.info('[va] library: wanted', p.kind, '(' + r.people + ' people)'));
+    }
+    if (p.suggest && (await chrome.storage.local.get('va.flows.auto'))['va.flows.auto'] !== false) autoMake(conversationId, p).catch((e) => console.warn('[va] auto flow:', e && e.message));
     return p;
   };
+  // A repeated task with no flow: use one from the library if it has one, otherwise have an agent write and test one
+  // in the background. At most 3 a day, one at a time; the user can turn this off on the Tasks page.
+  const flowTask = (p) =>
+    'Make a reusable flow for a task I keep doing: ' + p.name + '. What I asked before: ' + p.examples.map((e) => '"' + e + '"').join('; ') +
+    '. Open the site' + (p.sites.length ? ' (' + p.sites.join(', ') + ')' : '') + ', use inspect_page for selectors, make the parts that change inputs, add a notify step if it waits for a result, and test it with save_flow. Then tell me how to run it.';
+  let making = null;
+  async function autoMake(conversationId, p) {
+    if (making && Date.now() - making.at < 15 * 60 * 1000) return console.info('[va] auto flow: already making', making.kind);
+    const log = ((await chrome.storage.local.get('va.autoFlows'))['va.autoFlows'] || []).filter((x) => Date.now() - Date.parse(x.at) < 864e5);
+    if (log.length >= 3) return console.info('[va] auto flow: 3 made today already; "' + p.name + '" waits on the Tasks page');
+    making = { kind: p.kind, at: Date.now() };
+    try {
+      await edit('va.patterns', {}, (all) => void (all[p.kind] && ((all[p.kind].flowRequested = true), (all[p.kind].suggest = false))));
+      const found = await globalThis.__vaLibraryFind?.(p.name + '. ' + (p.examples[0] || ''), p.sites[0] || '');
+      if (found) {
+        const r = await globalThis.__vaLibraryAdopt(found.id, conversationId).catch((e) => ({ ok: false, error: e.message }));
+        if (r.ok) {
+          await edit('va.patterns', {}, (all) => void (all[p.kind] && ((all[p.kind].covered = true), (all[p.kind].adopted = found.id))));
+          await chrome.storage.local.set({ 'va.autoFlows': [...log, { kind: p.kind, at: new Date().toISOString(), how: 'library', id: found.id }] });
+          console.info('[va] auto flow: using', found.id, 'from the library for', p.kind);
+          globalThis.__vaToast?.('A flow for “' + p.name + '”', 'Found “' + found.name + '” in the flow library. Next time this runs in one step.');
+          return;
+        }
+        if (r.declined) return console.info('[va] auto flow: you chose not to use', found.id);
+      }
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const started = await globalThis.__vaStartTask?.(tab && tab.id, flowTask(p));
+      await chrome.storage.local.set({ 'va.autoFlows': [...log, { kind: p.kind, at: new Date().toISOString(), how: 'made', conversationId: started && started.conversationId }] });
+      console.info('[va] auto flow: an agent is making a flow for', p.kind);
+      globalThis.__vaToast?.('Making a flow for “' + p.name + '”', 'You do this often, so an agent is writing and testing a flow for it in the background' + (p.sites.length ? ' (on ' + p.sites[0] + ')' : '') + '. Turn this off on the Tasks page.');
+    } finally {
+      making = null;
+    }
+  }
   // Tasks page: make a flow for a common task, or dismiss the suggestion.
   chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (!m || !['va.patternFlow', 'va.patternDismiss', 'va.memoryAdd', 'va.memoryDelete', 'va.viewDelete'].includes(m.type)) return;
@@ -3046,9 +3283,7 @@
       const p = ((await chrome.storage.local.get('va.patterns'))['va.patterns'] || {})[m.kind];
       if (!p) return { ok: false, error: 'unknown task kind' };
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      const text =
-        'Make a reusable flow for a task I keep doing: ' + p.name + '. What I asked before: ' + p.examples.map((e) => '"' + e + '"').join('; ') +
-        '. Open the site' + (p.sites.length ? ' (' + p.sites.join(', ') + ')' : '') + ', use inspect_page for selectors, make the parts that change inputs, add a notify step if it waits for a result, and test it with save_flow. Then tell me how to run it.';
+      const text = flowTask(p);
       await edit('va.patterns', {}, (all) => void (all[m.kind] && ((all[m.kind].flowRequested = true), (all[m.kind].suggest = false))));
       const r = await globalThis.__vaStartTask?.(tab && tab.id, text);
       return { ok: true, started: !!r };
@@ -3460,8 +3695,8 @@ sudo systemctl restart ollama`,"panel.newChat":`新對話`,"panel.settings":`設
 The user cancelled the step.`;await r.toolResult(o,c,u,!l),await t7({...t,pendingPrompt:void 0}),s!==`withdrawn`&&this.#R(e,t)}}async handle(e,t){switch(t.type){case`subscribe`:return this.#b(e,t.tabId,t.conversationId,t.sinceSeq);case`send`:return this.#w(e,t);case`stop`:this.#d(t.conversationId);return;case`queue`:{let e=this.#i.get(t.conversationId)??[];e.push({id:t.id,text:t.text,attachments:[],at:new Date().toISOString()}),this.#i.set(t.conversationId,e),this.#u(t.conversationId);return}case`unqueue`:{let e=this.#i.get(t.conversationId)??[];this.#i.set(t.conversationId,e.filter(e=>e.id!==t.id)),this.#u(t.conversationId);return}case`continue`:return await this.#y(e,t.conversationId)?this.#I(t.conversationId,`capped`,`the user pressed Continue; go on with the task.`):void 0;case`resume`:return await this.#y(e,t.conversationId)?this.#I(t.conversationId,`interrupted`,`the user resumed the run; observe before acting.`):void 0;case`answer`:await this.broker.answer(t.promptId,t.answer);return;case`compact`:return this.#A(t.conversationId);case`export`:{let n=await K5(t.conversationId);if(!n)return;this.journal.direct(t.conversationId,e.sink,{type:`export`,conversationId:t.conversationId,filename:mhe(n),markdown:ghe(n,await Q5(t.conversationId))});return}case`screenshot-tab`:return this.#k(e,t.tabId,t.conversationId);case`edit`:case`restart`:return this.#E(e,t.conversationId,t.type,t.entryId,t.text);case`retry`:return this.#E(e,t.conversationId,`retry`);case`new-chat`:{let n=await this.scope.conversationOf(t.tabId);if(n&&n!==e.conversationId&&this.#e.has(n)){this.journal.direct(e.conversationId,e.sink,{type:`error`,message:`scope.ownerRunning`});return}return await this.scope.detach(t.tabId),this.#b(e,t.tabId,null)}case`set-mode`:if(!await K5(t.conversationId))return;await this.#j(t.conversationId,t.mode),await dc.set(e=>({...e,defaultMode:t.mode}));return;case`set-model`:await this.#M(t.conversationId,{model:t.model,reasoning:t.reasoning});return;case`history`:return this.#S(e,t.query);case`rename`:{let n=t.title.replace(/\s+/g,` `).trim();if(!n)return;let r=await J5(t.conversationId,{title:n,titleByUser:!0});return r&&this.emit(t.conversationId,{type:`conversation`,conversation:r}),this.#S(e)}case`delete`:return await this.#C(t.conversationId,!!t.closeAgentTabs),this.#S(e);case`share-tab`:await this.#P(e,t.conversationId,t.tabId,`user`);return;case`unshare-tab`:await this.scope.remove(t.conversationId,t.tabId);return;case`open`:{let n=await this.scope.tabsOf(t.conversationId);if(n.length&&!n.includes(t.tabId)){for(let e of[...this.connections])e.tabId===n[0]&&e.conversationId!==t.conversationId&&await this.#b(e,n[0],t.conversationId);return}let r=await this.scope.conversationOf(t.tabId);if(r&&r!==t.conversationId&&this.#e.has(r)){this.journal.direct(e.conversationId,e.sink,{type:`error`,message:`scope.ownerRunning`});return}return this.#b(e,t.tabId,t.conversationId)}default:this.journal.direct(e.conversationId,e.sink,{type:`error`,message:`The command ${t.type} is not available.`})}}async#y(e,t){let n=e.tabId;if(n===null||e.conversationId!==t)return!0;let r=await this.scope.conversationOf(n);if(r===t)return!0;if(r&&this.#e.has(r))return this.journal.direct(t,e.sink,{type:`error`,message:`scope.ownerRunning`}),!1;let i=await this.scope.add(t,n,`start`,{move:!0});return i.ok?!0:(this.journal.direct(t,e.sink,{type:`error`,message:i.reason===`blocked`?`scope.blocked`:`scope.gone`}),!1)}async#b(e,t,n,r){e.tabId=t;let i=n??await this.scope.conversationOf(t);if(e.unsubscribe?.(),e.unsubscribe=void 0,e.conversationId=i,!i||!await K5(i)){e.conversationId=null,this.journal.direct(null,e.sink,{type:`bound`,conversationId:null}),this.journal.direct(null,e.sink,{type:`snapshot`,conversation:null,entries:[],status:`idle`,queue:[],prompts:[]}),this.#D(e,t);return}if(await this.journal.ready(i),e.conversationId!==i)return;e.unsubscribe?.(),e.unsubscribe=this.journal.subscribe(i,e.sink);let a=r===void 0?null:this.journal.since(i,r);if(a){for(let t of a)e.sink(t);let t=this.journal.streaming(i);t&&this.journal.direct(i,e.sink,{type:`message_update`,...t})}else this.journal.direct(i,e.sink,{type:`bound`,conversationId:i}),this.journal.direct(i,e.sink,await this.snapshot(i)),this.journal.direct(i,e.sink,{type:`tabs`,tabs:await this.scope.scopeTabs(i)}),this.#D(e,t),this.#x(i,e)}#x(e,t){let n=this.#o.get(e);n?.length&&t&&(this.#o.delete(e),this.journal.direct(e,t.sink,{type:`queue`,items:[],returned:n}),this.#l=this.#l.then(async()=>{let t=await e7(e);t?.steering.length&&!this.#e.has(e)&&await t7({...t,steering:[]})}).catch(()=>void 0))}async#S(e,t){let n=(await q5(t)).map(e=>({id:e.id,title:e.title,updatedAt:e.updatedAt,status:e.status,agentTabs:0,tabs:[]}));for(let e of n)e.agentTabs=await this.scope.agentTabCount(e.id),e.tabs=await this.scope.tabsOf(e.id);this.journal.direct(e.conversationId,e.sink,{type:`history`,items:n})}async deleteAll(){await oge().catch(()=>void 0),await HR(async()=>{for(let e of await q5())await this.#C(e.id,!1);await wpe(),await whe(),await Dhe(),await chrome.storage.local.remove([`nb.settings`,`nb.providers`,`nb.keys`,`nb.siteRules`,w9,T9,E9,D9,...S9])})}async#C(e,t){let n=this.#e.get(e);n&&(n.controller.abort(),await n.done.catch(()=>void 0));let r=[...this.connections].filter(t=>t.conversationId===e);await this.scope.release(e,t),await xpe(e),await bc(e);for(let e of r)e.tabId!==null&&await this.#b(e,e.tabId,null);this.emit(e,{type:`bound`,conversationId:null}),this.emit(e,{type:`snapshot`,conversation:null,entries:[],status:`idle`,queue:[],prompts:[]}),this.journal.forget(e)}async snapshot(e){let t=await K5(e)??null,n=await vc(e),r=await Q5(e),i=await e7(e);return{type:`snapshot`,conversation:t,entries:_7(r),status:i?.status??`idle`,reason:i?.reason,...i?{startedAt:i.startedAt}:{},queue:this.#i.get(e)??[],prompts:this.broker.promptsOf(e),streaming:this.journal.streaming(e),...n?{live:n}:{}}}async#w(e,t){let n=t.text.trim();if(!n&&!t.attachments.length&&!t.context.some(e=>e.kind===`selection`))return;let r=t.startUrl;if(r&&(await this.permissions.ready(),!_9(r)||Kd(r,this.permissions.blockedSites()))){this.journal.direct(t.conversationId,e.sink,{type:`error`,message:`shortcut.blocked`});return}let i;if(t.conversationId&&(i=await K5(t.conversationId),i&&!await this.#y(e,i.id)))return;i||(i=await bpe({mode:t.mode,tabs:[t.tabId]}),t.model&&await yc(i.id,{model:t.model,reasoning:t.reasoning}),await this.#b(e,t.tabId,i.id),await this.scope.add(i.id,t.tabId,`start`,{move:!0}));let a=i.id;t.model&&await this.#N(a,{model:t.model,reasoning:t.reasoning});for(let n of t.context)n.kind===`tab`&&n.tabId!==t.tabId&&await this.#P(e,a,n.tabId,`user`);if(this.#e.has(a))return this.handle(e,{type:`queue`,conversationId:a,id:W5(),text:n,attachments:[],context:[]});await Wc(a,n,t.tabId).catch(()=>void 0),t.mode!==i.mode&&await this.#j(a,t.mode);let{files:o,warnings:s}=await this.#T(a,i,t.attachments),c=t.context.flatMap(e=>e.kind===`selection`?[{type:`selection`,text:e.text.slice(0,2e4),url:e.url,title:e.title}]:[]);if(!n&&!o.length&&!c.length)return;let l=await Y5(a,{type:`message`,message:{role:`user`,parts:[...n?[{type:`text`,text:n}]:[],...c,...o]}});if(!i.title&&!i.titleByUser){let e=await J5(a,{title:ype(n||c[0]?.text||o[0]?.name||`Conversation`)});e&&this.emit(a,{type:`conversation`,conversation:e})}this.emit(a,{type:`message_end`,entry:{kind:`user`,id:l.id,text:n,...o.length?{attachments:o.map(e=>({id:e.id,name:e.name,mimeType:e.mimeType,size:e.size}))}:{},...c.length?{quotes:c.map(e=>({text:e.text,url:e.url,title:e.title}))}:{},at:l.at}});for(let e of s)await this.#B(a,e,`warn`);r&&await Tge(t.tabId,r),this.#R(a,void 0,t.model?{model:t.model,reasoning:t.reasoning}:void 0)}async#T(e,t,n){let r=[];if(!n.length)return{files:[],warnings:r};let i=[],a=(await Cpe(e)).reduce((e,t)=>e+t.size,0),o=await U9(await H9(e)).then(e=>e.profile.vision).catch(()=>!0);for(let t of n){let n=await i7(t.id);if(!n||n.conversationId&&n.conversationId!==e)continue;let s=l7(n.name,n.mimeType);if(`refused`in s)r.push(`${n.name}: ${s.refused}`);else if(n.size>26214400)r.push(`${n.name} is larger than 25 MB and was not attached.`);else if(i.length>=16)r.push(`${n.name} was not attached: a message holds at most 16 files.`);else{if(n.conversationId!==e){if(a+n.size>104857600){r.push(`${n.name} was not attached: a conversation holds at most 100 MB of files.`);continue}a+=n.size,await r7({...n,conversationId:e})}s.kind===`image`&&!o&&r.push(`This model cannot see images: ${n.name} is kept with the conversation but not sent.`),i.push({type:`attachment`,id:n.id,name:n.name,mimeType:n.mimeType,size:n.size})}}return{files:i,warnings:r}}async#E(e,t,n,r,i){if(this.#e.has(t)){this.journal.direct(t,e.sink,{type:`error`,message:`run.stopFirst`});return}if(!await this.#y(e,t))return;let a=(await Q5(t)).filter(e=>e.type===`message`&&e.message.role===`user`&&!e.appOwned);if(n===`edit`){let e=a.find(e=>e.id===r),n=i?.trim();if(!e||!n)return;await $5(t,e.parentId);let o=e.message.parts.flatMap(e=>e.type===`attachment`?[{...e,inlined:!1}]:[]);await Y5(t,{type:`message`,message:{role:`user`,parts:[{type:`text`,text:n},...o]}})}else{let e=n===`restart`?a.find(e=>e.id===r):a.at(-1);if(!e)return;await $5(t,e.id)}this.emit(t,await this.snapshot(t)),this.#R(t)}#D(e,t){let n=this.#a.get(t);if(n?.length){this.#a.delete(t);for(let t of n)this.journal.direct(e.conversationId,e.sink,{type:`selection`,...t})}}addSelection(e,t){let n=[...this.connections].filter(t=>t.tabId===e);if(!n.length)this.#a.set(e,[...this.#a.get(e)??[],t]);else for(let e of n)this.journal.direct(e.conversationId,e.sink,{type:`selection`,...t})}async#O(e,t,n){if(globalThis.__vaTools?.has(t.toolName))try{let r=await globalThis.__vaAgentTool(e,t,n);if(r&&r.useTab!==void 0){let i=r.useTab,a=await this.scope.add(e,i,`user`);if(!a.ok&&a.reason===`owned`){if(a.owner&&this.#e.has(a.owner))return{text:`error: tab ${i} is being used by another running task; ask the user, or open the page in this task's tab.`,isError:!0};a=await this.scope.add(e,i,`user`,{move:!0})}if(!a.ok)return{text:`error: could not bring tab ${i} into this task (${a.reason}).`,isError:!0};await this.#t.get(e)?.share(i).catch(()=>void 0);return{text:`use_tab · tab ${i} is now one of this conversation's tabs. Select it with tabs (action select, tabId ${i}), then take a snapshot.`,isError:!1}}return r}catch(r){return{text:`error: ${r instanceof Error?r.message:String(r)}`,isError:!0}}if(Q7.some(e=>e.name===t.toolName))try{let r=await Ume(BR,t,(await this.scope.tabsOf(e))[0],n,chrome.runtime.getURL(`sidepanel.html`)),i=this.#t.get(e);r&&typeof r==`object`&&`tabId`in r&&typeof r.tabId==`number`&&(await this.scope.add(e,r.tabId,`agent`),await i?.share(r.tabId).catch(()=>void 0));let a=JSON.stringify(r),o=a.length>18e3?JSON.stringify({truncated:!0,preview:a.slice(0,16e3)}):a;return{text:i?i.wrap(o,{site:`saved-flow-output`}):o,isError:!1}}catch(e){return{text:e instanceof Error?e.message:`Function failed`,isError:!0}}if(t.toolName!==`save_file`)return{text:`error: ${t.toolName} is not available.`,isError:!0};let r=t.input??{},i=dme(r);if(!i.ok)return{text:`error INVALID_ARGUMENT (nothing saved)\n${i.reason}`,isError:!0};let a=String(r.content),o=!1,s=()=>chrome.permissions.contains({permissions:[`downloads`]}).catch(()=>!1);if((this.#n.get(e)??`ask`)===`ask`||!await s()){let t=await this.broker.open(e,`save-file`,{filename:i.filename,mimeType:i.mimeType,bytes:i.bytes,preview:a.split(`
 `).slice(0,8).join(`
 `).slice(0,800)},n);if(t!==`save`&&t!==`save-as`)return{text:`save_file · the user discarded the file; nothing was saved.`,isError:!0};o=t===`save-as`}if(!await s())return{text:`error SAVE_FAILED (not saved)
-Saving files needs Chrome's downloads permission, which the user has not allowed.`,isError:!0};let c=await fhe({filename:i.filename,content:a,mimeType:i.mimeType},o).catch(e=>({state:`interrupted`,error:e.message,name:i.filename,downloadId:-1}));if(c.state!==`complete`)return{text:`error SAVE_FAILED (not saved)\nThe download did not complete: ${c.error??`interrupted`}.`,isError:!0};let l=await Y5(e,{type:`ui`,kind:`download`,data:{name:c.name,downloadId:c.downloadId,bytes:i.bytes}});this.emit(e,{type:`message_end`,entry:{kind:`download`,id:l.id,name:c.name,downloadId:c.downloadId,bytes:i.bytes,at:l.at}});let u=c.name===i.filename?``:dhe(c.name,i.filename)?`; a file named ${B(i.filename,120)} was already there, so a number was added`:`; it was saved under that name instead of ${B(i.filename,120)}`;return{text:`save_file · saved ${B(c.name,120)} (${i.bytes} bytes)${o?``:` in the Downloads folder`}${u}.`,isError:!1}}async#k(e,t,n){let r=t=>this.journal.direct(n,e.sink,{type:`error`,message:t}),i=await this.scope.conversationOf(t);if(i&&this.#e.has(i)||n&&this.#e.has(n))return r(`The agent is working in this tab. Stop it first, or wait until it finishes.`);let a=await l9;await this.permissions.ready();let o=e9(a,{urlPolicy:{allow:[],deny:[],blocked:this.permissions.blockedSites()}}),s;try{o.shareTab(t),s=await o.call(`screenshot`,{tabId:t})}catch(e){s={ok:!1,text:String(e?.message??e)}}finally{await a.closeSession(o)}let c=s.ok?s.data:void 0;if(!c?.base64)return r(`This tab cannot be captured: Chrome does not let extensions capture its own pages.`);let l=c.mimeType??`image/png`,u=Uint8Array.from(atob(c.base64),e=>e.charCodeAt(0)),d=new Date().toISOString().replace(/[:T]/g,`-`).slice(0,19),f={id:W5(),name:`screenshot-${d}.png`,mimeType:l,size:u.length};await r7({...f,conversationId:``,data:new Blob([u],{type:l}),createdAt:new Date().toISOString()}),this.journal.direct(n,e.sink,{type:`attached`,ref:f,preview:await u9(c.base64,l)})}async#A(e){let t=this.#e.get(e);if(t)t.loop?.requestCompaction();else if(await K5(e))try{let t=await U9(await H9(e)),n=await dc.get()??lc,r=H7({vision:t.profile.vision,agentTools:Q7}),i=m7({responseLanguage:n.responseLanguage,tools:r.map(e=>e.name),customInstructions:n.customInstructions}),a=new Set(((await e7(e))?.debt??[]).map(e=>e.toolCallId)),o=await k7({conversationId:e,model:t,fixedChars:i.length+JSON.stringify(r.map(e=>[e.name,e.description,e.parameters])).length,unverified:a,messages:e=>N7(e,{vision:t.profile.vision,unverified:a})});if(t.reasoningDropped&&await this.#B(e,X7,`info`),!o){await this.#B(e,`Nothing to compact yet: the conversation is still short.`,`info`);return}this.emit(e,{type:`compacted`,tokensBefore:o.tokensBefore,tokensAfter:o.tokensAfter});for(let t of o.notices)this.emit(e,{type:`message_end`,entry:{kind:`notice`,...t}})}catch(t){let n=t instanceof V9?t.message:String(t?.message??t);await this.#B(e,n,`error`)}}async#j(e,t){let n=await K5(e);if(!n||n.mode===t)return;let r=await J5(e,{mode:t});this.#n.has(e)&&this.#n.set(e,t),await Y5(e,{type:`mode_change`,mode:t}),r&&this.emit(e,{type:`conversation`,conversation:r})}async#M(e,t){await K5(e)&&(await this.#N(e,t),await dc.set(e=>({...e,defaultModel:t.model,reasoning:t.reasoning})))}async#N(e,t){let n=e=>({model:{providerId:e.model.providerId,model:e.model.model},reasoning:e.reasoning}),r=n(t),i=await vc(e);i&&JSON.stringify(n(i))===JSON.stringify(r)||(await yc(e,r),this.emit(e,{type:`live`,pair:r}))}async#P(e,t,n,r){let i=await this.scope.add(t,n,r);if(!i.ok&&i.reason===`owned`){let a=await chrome.tabs.get(n).catch(()=>null);if(await this.broker.open(t,`confirm`,{question:`move-tab`,title:a?.title??``},new AbortController().signal,{tabId:n})!==`yes`)return!1;if(i.owner&&this.#e.has(i.owner))return this.journal.direct(t,e.sink,{type:`error`,message:`scope.ownerRunning`}),!1;i=await this.scope.add(t,n,r,{move:!0})}return i.ok?!0:(this.journal.direct(t,e.sink,{type:`error`,message:i.reason===`blocked`?`scope.blocked`:`scope.gone`}),!1)}async#F(e,t,n){e.status=t,e.reason=n,await t7(e);let r=await J5(e.conversationId,{status:t});this.emit(e.conversationId,{type:`run_status`,status:t,reason:n,startedAt:e.startedAt}),await this.scope.status(e.conversationId,t,r?.title??``),this.border.status(e.conversationId,t).catch(()=>void 0)}async#I(e,t,n){if(this.#e.has(e))return;let r=await e7(e);r?.status===t&&await this.#L(e,{note:n,restore:r})}async#L(e,t={}){t.note&&await new f7(e,`note`).appNote(t.note),this.#R(e,t.restore)}#R(e,t,n){let r=n?Promise.resolve(n):H9(e);r.catch(()=>void 0);let i=new AbortController,a=W5(),o,s=(async()=>{let n=await K5(e),s=new Date().toISOString(),c={conversationId:e,runId:a,leafEntryId:n.leafId,status:`running`,steering:[],turns:0,usage:a7,debt:t?.debt??[],guards:t?.guards??s7,tabs:n.tabs,startedAt:s,updatedAt:s};this.#r.set(e,c),await this.#F(c,`running`);let l;try{let s=await U9(await r),u=await dc.get()??lc;c.model=await UR(s.ref),c.model&&(await t7(c),c.model,s.reasoning,n.mode,s.profile.vision,this.#e.size),this.#n.set(e,n.mode);let d=await this.#h(e);c.tabs=d.tabIds();let f=H7({vision:s.profile.vision,agentTools:Q7}),p=new Hme({conversationId:e,runId:a,startedAt:c.startedAt,model:s,system:m7({responseLanguage:u.responseLanguage,tools:f.map(e=>e.name),customInstructions:`${u.customInstructions??``}\nYour user-given name is ${await Bs()}. Work fast, in as few steps as you can. If a saved flow listed below does the job, call run_flow as your very first step, before looking at tabs or pages, then answer from its output. For a quick action on a site (ask ChatGPT or Claude something, search a site, open a page), go straight there: navigate to the address (https://chatgpt.com/, https://claude.ai/new, ...), type with submit, wait for the result, read it, answer. Use open_tabs only when the user refers to a tab that is already open, and take a new snapshot only after the page changed in a way you cannot predict. Flows are saved, tested functions that do a whole job in one step; find_flows also searches the online library, so when no saved flow fits a job on a well-known site (search YouTube, Wikipedia, Gmail, a shop), call find_flows once before working the site out by hand. To make a page or dashboard the user will open again, load show_view first and give its sections flows as sources: the page runs them each time it opens, so do not run them yourself. After you finish a repeatable job by hand, offer to save it as a flow (inspect_page, then save_flow with a test input); share_flow only when the user agrees. Keep flows general: whatever changes between requests (search words, price limits, sort order, account) is an input, used in the address ({{query}}) or in filter steps. When a saved flow almost fits, improve it (save_flow with the same id, adding optional inputs, so it still works the old way) instead of saving a narrow one-off flow. Never claim a tool result that was not returned. When you need information or a decision that only the user can give (their details, a choice, a confirmation), ask with ask_user (kind input) instead of ending the task; the user can answer by typing or speaking in a popup on the page. End with done(partial) only when the user declines or cannot help. ${globalThis.__vaRecentContext?.(e)??``}`}),tools:f,mode:()=>this.#n.get(e)??n.mode,layer:$me(d,this.border),host:this.#m(e,d),signal:i.signal,emit:t=>(globalThis.__vaEvent?.(e,t),this.emit(e,t)),turnCap:u.turnCap,thumbnail:u9,agentTool:(t,n)=>this.#O(e,t,n),restore:t?{debt:t.debt,guards:t.guards}:void 0,takeSteering:()=>{let t=this.#i.get(e)?.splice(0)??[];return t.length&&this.#u(e),t.map(e=>e.text)}}),m=this.#e.get(e);m?.runId===a&&(m.loop=p),o=p,p.hasSteering=()=>(this.#i.get(e)?.length??0)>0,l=await p.run(),c.turns+=l.turns,c.usage=o7(c.usage,l.usage),c.outcome=l.outcome,c.debt=p.debt,c.guards=p.guards.state,l.status===`failed`&&l.reason&&await this.#B(e,l.reason,`error`),l.status===`stopped`&&(await this.#B(e,Mme,`info`),await new f7(e,a).appNote(Nme)),await this.#F(c,l.status,l.reason);let h=await this.scope.tabsOf(e);globalThis.__vaRunEnd?.(e,l);await MN(e,l.outcome===`success`,h[0],{reason:l.outcome===`success`?void 0:l.reason||l.summary,tabs:h,notify:l.status!==`stopped`&&!await this.#c(e),status:l.status===`stopped`?`stopped`:l.outcome===`success`?`done`:`failed`}).catch(()=>void 0)}catch(t){let n=t instanceof V9?t.message:`The run failed: ${String(t)}`;await this.#B(e,n,`error`),c.outcome=`failed`,await this.#F(c,`failed`,n);let r=await this.scope.tabsOf(e);await MN(e,!1,r[0],{tabs:r,notify:!await this.#c(e)}).catch(()=>void 0)}finally{Sge(c.status,c.outcome)===`success`&&Ahe.set(t=>Nhe(t,new Date,e)).catch(()=>void 0),this.#e.delete(e),this.#r.delete(e),this.broker.withdrawAll(e),await this.#g(e),i.signal.aborted||await this.#z(e),o?.compactionPending&&!this.#e.has(e)&&await this.#A(e)}})();this.#e.set(e,{runId:a,controller:i,done:s}),this.#_(),s.then(()=>this.#_())}async#z(e){let t=this.#i.get(e)?.splice(0)??[];if(t.length&&!this.#e.has(e)&&await K5(e)){this.#u(e);for(let n of t){let t=await Y5(e,{type:`message`,message:{role:`user`,parts:[{type:`text`,text:n.text}]}});this.emit(e,{type:`message_end`,entry:{kind:`user`,id:t.id,text:n.text,at:t.at}})}this.#R(e)}}async#B(e,t,n){let r=await Y5(e,{type:`ui`,kind:`notice`,data:{text:t,tone:n}});this.emit(e,{type:`message_end`,entry:{kind:`notice`,id:r.id,text:t,tone:n,at:r.at}})}};async function Tge(e,t){await new Promise(n=>{let r=()=>{clearTimeout(a),chrome.tabs.onUpdated.removeListener(i),n()},i=(t,n)=>{t===e&&n.status===`complete`&&r()},a=setTimeout(r,15e3);chrome.tabs.onUpdated.addListener(i),chrome.tabs.update(e,{url:t}).catch(r)})}function Ege(){chrome.runtime.setUninstallURL(``).catch(()=>void 0)}var X9=new wge;Ac(),WR(X9);var Z9=new Map;async function Q9(e,t,n,r,i=[]){if(!t.trim()||t.length>6e3||!n||![`agent`,`workflow`].includes(n.kind)||![`current`,`background`].includes(n.target)||![`low`,`medium`].includes(n.effort))throw Error(`Invalid task`);if(r?.throwIfAborted(),n.kind===`workflow`){let a=await BR.handle({type:`workflow.generate`,request:t,tabId:e,untrustedContext:i.filter(e=>e.kind===`selection`).map(e=>e.kind===`selection`?e.text:``).join(`
-`).slice(0,12e3)},{url:chrome.runtime.getURL(`sidepanel.html`)},r);return await chrome.storage.session.set({workflowGeneratedDraft:a.workflow}),{tabId:(await chrome.tabs.create({url:chrome.runtime.getURL(`workflows.html?tab=${e}`),active:!1})).id,effort:n.effort,target:`background`}}let a=await f(e,n);Z9.set(e,a);let o={tabId:null,conversationId:null,sink:()=>{}};try{return await X9.handle(o,{type:`subscribe`,tabId:a}),r?.throwIfAborted(),await X9.handle(o,{type:`send`,tabId:a,conversationId:o.conversationId,text:t,attachments:[],context:i,mode:`ask`,model:n.effort===`medium`&&globalThis.__vaStrong===!0?Dc:Oc,reasoning:n.effort}),{tabId:a,conversationId:o.conversationId,effort:n.effort,target:n.target}}finally{o.unsubscribe?.()}}eae(async(e,t,n,r,i,__vp)=>{t=await qc(t);let a=await mc.get(),o=await chrome.storage.session.get(`metaKey`),s=await tae(t,typeof o.metaKey==`string`?o.metaKey:a[Ec],n),c=[];if(r?.editable||r?.pageSelection){let e=i?.split(/[?#]/)[0]??``;try{let t=new URL(e);t.origin!==`null`&&(e=t.origin)}catch{}c.push({kind:`selection`,text:JSON.stringify(r),url:e,title:`Captured text, selection and cursor context`})}try{let e2=(i??``).split(/[#]/)[0];c.push({kind:`selection`,text:JSON.stringify({sourceTabId:e,page:{url:e2.slice(0,500),title:String(__vp?.title??``).slice(0,200)},pointedAt:__vp?.pointed??null,note:`This is the tab the user was looking at when they spoke. If the task is about it, bring it into this task with use_tab (tabId ${e}) and read it.`}),url:(()=>{try{return new URL(e2).origin}catch{return``}})(),title:`Where the user was when they spoke: the page and the element under the pointer`})}catch{}await Q9(e,t,s,n,c)}),globalThis.__vaStartTask=(e,t)=>Q9(e,t,{effort:`low`,kind:`agent`,target:`background`});chrome.runtime.onMessage.addListener((e,t,n)=>{if(e?.type===`product.task`&&t.id===chrome.runtime.id&&t.url?.startsWith(chrome.runtime.getURL(``)))return Q9(e.sourceTabId,e.text,e.route).then(e=>n({ok:!0,...e}),e=>n({ok:!1,error:e.message})),!0}),chrome.tabs.onRemoved.addListener(e=>{Z9.delete(e);for(let[t,n]of Z9)n===e&&Z9.delete(t)}),jc().catch(()=>void 0),chrome.runtime.onInstalled.addListener(e=>{jc().catch(()=>void 0),e.reason===`install`&&chrome.tabs.create({url:chrome.runtime.getURL(`/welcome.html`)})}),chrome.runtime.onMessage.addListener((e,t,n)=>{let r=e;if(r?.type===`nb.data`&&t.id===chrome.runtime.id)return(r.op===`delete-all`?X9.deleteAll():Promise.reject(Error(`unknown request`))).then(()=>n({ok:!0}),e=>n({ok:!1,error:String(e)})),!0}),chrome.alarms?.onAlarm.addListener(()=>void 0),X9.restore().catch(e=>console.error(`[runs] restore failed`,e)),Ege(),chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`voice.stopTask`&&t.id===chrome.runtime.id&&(async()=>{let n=Number.isInteger(e.taskTabId)?e.taskTabId:t.tab?.id;if(!n&&t.url===chrome.runtime.getURL(`home.html`)&&Number.isInteger(e.sourceTabId)){let r=await chrome.tabs.get(e.sourceTabId).catch(()=>void 0);r&&(r.url===t.url||[`chrome://newtab/`,`chrome://new-tab-page/`].includes(r.url??``))&&(n=r.id)}if(!n)return;let r=Z9.get(n)??n,i={tabId:null,conversationId:null,sink:()=>{}};try{await X9.handle(i,{type:`subscribe`,tabId:r}),i.conversationId&&await X9.handle(i,{type:`stop`,conversationId:i.conversationId})}finally{i.unsubscribe?.()}})()}),chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`voice.openPanel`&&t.id===chrome.runtime.id&&(Number.isInteger(e.taskTabId)?(chrome.tabs.update(e.taskTabId,{active:!0}).catch(()=>{}),Pc(e.taskTabId)):t.tab?.id&&Pc(t.tab.id))});chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`va.followUp`&&t.id===chrome.runtime.id&&typeof e.text==`string`&&e.text.trim()&&Number.isInteger(e.taskTabId)&&(async()=>{let i={tabId:null,conversationId:null,sink:()=>{}};try{await X9.handle(i,{type:`subscribe`,tabId:e.taskTabId});await X9.handle(i,{type:`send`,tabId:e.taskTabId,conversationId:i.conversationId??e.conversationId,text:e.text.trim().slice(0,4e3),attachments:[],context:[],mode:`ask`});console.info(`[va] follow-up sent to task`,e.conversationId)}catch(n){console.warn(`[va] follow-up failed`,n)}finally{i.unsubscribe?.()}})()});
+Saving files needs Chrome's downloads permission, which the user has not allowed.`,isError:!0};let c=await fhe({filename:i.filename,content:a,mimeType:i.mimeType},o).catch(e=>({state:`interrupted`,error:e.message,name:i.filename,downloadId:-1}));if(c.state!==`complete`)return{text:`error SAVE_FAILED (not saved)\nThe download did not complete: ${c.error??`interrupted`}.`,isError:!0};let l=await Y5(e,{type:`ui`,kind:`download`,data:{name:c.name,downloadId:c.downloadId,bytes:i.bytes}});this.emit(e,{type:`message_end`,entry:{kind:`download`,id:l.id,name:c.name,downloadId:c.downloadId,bytes:i.bytes,at:l.at}});let u=c.name===i.filename?``:dhe(c.name,i.filename)?`; a file named ${B(i.filename,120)} was already there, so a number was added`:`; it was saved under that name instead of ${B(i.filename,120)}`;return{text:`save_file · saved ${B(c.name,120)} (${i.bytes} bytes)${o?``:` in the Downloads folder`}${u}.`,isError:!1}}async#k(e,t,n){let r=t=>this.journal.direct(n,e.sink,{type:`error`,message:t}),i=await this.scope.conversationOf(t);if(i&&this.#e.has(i)||n&&this.#e.has(n))return r(`The agent is working in this tab. Stop it first, or wait until it finishes.`);let a=await l9;await this.permissions.ready();let o=e9(a,{urlPolicy:{allow:[],deny:[],blocked:this.permissions.blockedSites()}}),s;try{o.shareTab(t),s=await o.call(`screenshot`,{tabId:t})}catch(e){s={ok:!1,text:String(e?.message??e)}}finally{await a.closeSession(o)}let c=s.ok?s.data:void 0;if(!c?.base64)return r(`This tab cannot be captured: Chrome does not let extensions capture its own pages.`);let l=c.mimeType??`image/png`,u=Uint8Array.from(atob(c.base64),e=>e.charCodeAt(0)),d=new Date().toISOString().replace(/[:T]/g,`-`).slice(0,19),f={id:W5(),name:`screenshot-${d}.png`,mimeType:l,size:u.length};await r7({...f,conversationId:``,data:new Blob([u],{type:l}),createdAt:new Date().toISOString()}),this.journal.direct(n,e.sink,{type:`attached`,ref:f,preview:await u9(c.base64,l)})}async#A(e){let t=this.#e.get(e);if(t)t.loop?.requestCompaction();else if(await K5(e))try{let t=await U9(await H9(e)),n=await dc.get()??lc,r=H7({vision:t.profile.vision,agentTools:Q7}),i=m7({responseLanguage:n.responseLanguage,tools:r.map(e=>e.name),customInstructions:n.customInstructions}),a=new Set(((await e7(e))?.debt??[]).map(e=>e.toolCallId)),o=await k7({conversationId:e,model:t,fixedChars:i.length+JSON.stringify(r.map(e=>[e.name,e.description,e.parameters])).length,unverified:a,messages:e=>N7(e,{vision:t.profile.vision,unverified:a})});if(t.reasoningDropped&&await this.#B(e,X7,`info`),!o){await this.#B(e,`Nothing to compact yet: the conversation is still short.`,`info`);return}this.emit(e,{type:`compacted`,tokensBefore:o.tokensBefore,tokensAfter:o.tokensAfter});for(let t of o.notices)this.emit(e,{type:`message_end`,entry:{kind:`notice`,...t}})}catch(t){let n=t instanceof V9?t.message:String(t?.message??t);await this.#B(e,n,`error`)}}async#j(e,t){let n=await K5(e);if(!n||n.mode===t)return;let r=await J5(e,{mode:t});this.#n.has(e)&&this.#n.set(e,t),await Y5(e,{type:`mode_change`,mode:t}),r&&this.emit(e,{type:`conversation`,conversation:r})}async#M(e,t){await K5(e)&&(await this.#N(e,t),await dc.set(e=>({...e,defaultModel:t.model,reasoning:t.reasoning})))}async#N(e,t){let n=e=>({model:{providerId:e.model.providerId,model:e.model.model},reasoning:e.reasoning}),r=n(t),i=await vc(e);i&&JSON.stringify(n(i))===JSON.stringify(r)||(await yc(e,r),this.emit(e,{type:`live`,pair:r}))}async#P(e,t,n,r){let i=await this.scope.add(t,n,r);if(!i.ok&&i.reason===`owned`){let a=await chrome.tabs.get(n).catch(()=>null);if(await this.broker.open(t,`confirm`,{question:`move-tab`,title:a?.title??``},new AbortController().signal,{tabId:n})!==`yes`)return!1;if(i.owner&&this.#e.has(i.owner))return this.journal.direct(t,e.sink,{type:`error`,message:`scope.ownerRunning`}),!1;i=await this.scope.add(t,n,r,{move:!0})}return i.ok?!0:(this.journal.direct(t,e.sink,{type:`error`,message:i.reason===`blocked`?`scope.blocked`:`scope.gone`}),!1)}async#F(e,t,n){e.status=t,e.reason=n,await t7(e);let r=await J5(e.conversationId,{status:t});this.emit(e.conversationId,{type:`run_status`,status:t,reason:n,startedAt:e.startedAt}),await this.scope.status(e.conversationId,t,r?.title??``),this.border.status(e.conversationId,t).catch(()=>void 0)}async#I(e,t,n){if(this.#e.has(e))return;let r=await e7(e);r?.status===t&&await this.#L(e,{note:n,restore:r})}async#L(e,t={}){t.note&&await new f7(e,`note`).appNote(t.note),this.#R(e,t.restore)}#R(e,t,n){let r=n?Promise.resolve(n):H9(e);r.catch(()=>void 0);let i=new AbortController,a=W5(),o,s=(async()=>{let n=await K5(e),s=new Date().toISOString(),c={conversationId:e,runId:a,leafEntryId:n.leafId,status:`running`,steering:[],turns:0,usage:a7,debt:t?.debt??[],guards:t?.guards??s7,tabs:n.tabs,startedAt:s,updatedAt:s};this.#r.set(e,c),await this.#F(c,`running`);let l;try{let s=await U9(await r),u=await dc.get()??lc;c.model=await UR(s.ref),c.model&&(await t7(c),c.model,s.reasoning,n.mode,s.profile.vision,this.#e.size),this.#n.set(e,n.mode);let d=await this.#h(e);c.tabs=d.tabIds();let f=H7({vision:s.profile.vision,agentTools:Q7}),p=new Hme({conversationId:e,runId:a,startedAt:c.startedAt,model:s,system:m7({responseLanguage:u.responseLanguage,tools:f.map(e=>e.name),customInstructions:`${u.customInstructions??``}\nYour user-given name is ${await Bs()}. Work fast, in as few steps as you can. If a saved flow listed below does the job, call run_flow as your very first step, before looking at tabs or pages, then answer from its output. For a quick action on a site (ask ChatGPT or Claude something, search a site, open a page), go straight there: navigate to the address (https://chatgpt.com/, https://claude.ai/new, ...), type with submit, wait for the result, read it, answer. Use open_tabs only when the user refers to a tab that is already open, and take a new snapshot only after the page changed in a way you cannot predict. Flows are saved, tested functions that do a whole job in one step; find_flows also searches the online library, so when no saved flow fits a job on a well-known site (search YouTube, Wikipedia, Gmail, a shop), call find_flows once before working the site out by hand. To make a page or dashboard the user will open again, load show_view first and give its sections flows as sources: the page runs them each time it opens, so do not run them yourself. After you finish a repeatable job by hand, offer to save it as a flow (inspect_page, then save_flow with a test input); share_flow only when the user agrees. Keep flows general: whatever changes between requests (search words, price limits, sort order, account) is an input, used in the address ({{query}}) or in filter steps. When a saved flow almost fits, improve it (save_flow with the same id, adding optional inputs, so it still works the old way) instead of saving a narrow one-off flow. Never claim a tool result that was not returned. When you need information or a decision that only the user can give (their details, a choice, a confirmation), ask with ask_user (kind input) instead of ending the task; the user can answer by typing or speaking in a popup on the page. End with done(partial) only when the user declines or cannot help. ${globalThis.__vaRecentContext?.(e)??``}`}),tools:f,mode:()=>this.#n.get(e)??n.mode,layer:$me(d,this.border),host:this.#m(e,d),signal:i.signal,emit:t=>(globalThis.__vaEvent?.(e,t),this.emit(e,t)),turnCap:u.turnCap,thumbnail:u9,agentTool:(t,n)=>this.#O(e,t,n),restore:t?{debt:t.debt,guards:t.guards}:void 0,takeSteering:()=>{let t=this.#i.get(e)?.splice(0)??[];return t.length&&this.#u(e),t.map(e=>e.text)}}),m=this.#e.get(e);m?.runId===a&&(m.loop=p),o=p,p.hasSteering=()=>(this.#i.get(e)?.length??0)>0,l=await p.run(),c.turns+=l.turns,c.usage=o7(c.usage,l.usage),c.outcome=l.outcome,c.debt=p.debt,c.guards=p.guards.state,l.status===`failed`&&l.reason&&await this.#B(e,l.reason,`error`),l.status===`stopped`&&(await this.#B(e,Mme,`info`),await new f7(e,a).appNote(Nme)),await this.#F(c,l.status,l.reason);let h=await this.scope.tabsOf(e);globalThis.__vaRunEnd?.(e,l);await MN(e,l.outcome===`success`,h[0],{reason:l.outcome===`success`?void 0:l.reason||l.summary,tabs:h,notify:l.status!==`stopped`&&!await this.#c(e),status:l.status===`stopped`?`stopped`:l.outcome===`success`?`done`:`failed`}).catch(()=>void 0)}catch(t){let n=t instanceof V9?t.message:`The run failed: ${String(t)}`;await this.#B(e,n,`error`),c.outcome=`failed`,await this.#F(c,`failed`,n);let r=await this.scope.tabsOf(e);await MN(e,!1,r[0],{tabs:r,notify:!await this.#c(e)}).catch(()=>void 0)}finally{Sge(c.status,c.outcome)===`success`&&Ahe.set(t=>Nhe(t,new Date,e)).catch(()=>void 0),this.#e.delete(e),this.#r.delete(e),this.broker.withdrawAll(e),await this.#g(e),i.signal.aborted||await this.#z(e),o?.compactionPending&&!this.#e.has(e)&&await this.#A(e)}})();this.#e.set(e,{runId:a,controller:i,done:s}),this.#_(),s.then(()=>this.#_())}async#z(e){let t=this.#i.get(e)?.splice(0)??[];if(t.length&&!this.#e.has(e)&&await K5(e)){this.#u(e);for(let n of t){let t=await Y5(e,{type:`message`,message:{role:`user`,parts:[{type:`text`,text:n.text}]}});this.emit(e,{type:`message_end`,entry:{kind:`user`,id:t.id,text:n.text,at:t.at}})}this.#R(e)}}async#B(e,t,n){let r=await Y5(e,{type:`ui`,kind:`notice`,data:{text:t,tone:n}});this.emit(e,{type:`message_end`,entry:{kind:`notice`,id:r.id,text:t,tone:n,at:r.at}})}};async function Tge(e,t){await new Promise(n=>{let r=()=>{clearTimeout(a),chrome.tabs.onUpdated.removeListener(i),n()},i=(t,n)=>{t===e&&n.status===`complete`&&r()},a=setTimeout(r,15e3);chrome.tabs.onUpdated.addListener(i),chrome.tabs.update(e,{url:t}).catch(r)})}function Ege(){chrome.runtime.setUninstallURL(``).catch(()=>void 0)}var X9=new wge;Ac(),WR(X9);var Z9=new Map;async function Q9(e,t,n,r,i=[]){if(!t.trim()||t.length>6e3||!n||![`agent`,`workflow`].includes(n.kind)||![`current`,`background`].includes(n.target)||![`low`,`medium`].includes(n.effort))throw Error(`Invalid task`);if(r?.throwIfAborted(),globalThis.__vaFlowHintPrefetch?.(t,e),n.kind===`workflow`){let a=await BR.handle({type:`workflow.generate`,request:t,tabId:e,untrustedContext:i.filter(e=>e.kind===`selection`).map(e=>e.kind===`selection`?e.text:``).join(`
+`).slice(0,12e3)},{url:chrome.runtime.getURL(`sidepanel.html`)},r);return await chrome.storage.session.set({workflowGeneratedDraft:a.workflow}),{tabId:(await chrome.tabs.create({url:chrome.runtime.getURL(`workflows.html?tab=${e}`),active:!1})).id,effort:n.effort,target:`background`}}let a=await f(e,n);Z9.set(e,a);let o={tabId:null,conversationId:null,sink:()=>{}};try{return await X9.handle(o,{type:`subscribe`,tabId:a}),r?.throwIfAborted(),await globalThis.__vaFlowHintReady?.(t),await X9.handle(o,{type:`send`,tabId:a,conversationId:o.conversationId,text:t,attachments:[],context:i,mode:`ask`,model:n.effort===`medium`&&globalThis.__vaStrong===!0?Dc:Oc,reasoning:n.effort}),{tabId:a,conversationId:o.conversationId,effort:n.effort,target:n.target}}finally{o.unsubscribe?.()}}eae(async(e,t,n,r,i,__vp)=>{t=await qc(t);globalThis.__vaFlowHintPrefetch?.(t,e);let a=await mc.get(),o=await chrome.storage.session.get(`metaKey`),s=await tae(t,typeof o.metaKey==`string`?o.metaKey:a[Ec],n),c=[];if(r?.editable||r?.pageSelection){let e=i?.split(/[?#]/)[0]??``;try{let t=new URL(e);t.origin!==`null`&&(e=t.origin)}catch{}c.push({kind:`selection`,text:JSON.stringify(r),url:e,title:`Captured text, selection and cursor context`})}try{let e2=(i??``).split(/[#]/)[0];c.push({kind:`selection`,text:JSON.stringify({sourceTabId:e,page:{url:e2.slice(0,500),title:String(__vp?.title??``).slice(0,200)},pointedAt:__vp?.pointed??null,note:`This is the tab the user was looking at when they spoke. If the task is about it, bring it into this task with use_tab (tabId ${e}) and read it.`}),url:(()=>{try{return new URL(e2).origin}catch{return``}})(),title:`Where the user was when they spoke: the page and the element under the pointer`})}catch{}await Q9(e,t,s,n,c)}),globalThis.__vaStartTask=(e,t)=>Q9(e,t,{effort:`low`,kind:`agent`,target:`background`});chrome.runtime.onMessage.addListener((e,t,n)=>{if(e?.type===`product.task`&&t.id===chrome.runtime.id&&t.url?.startsWith(chrome.runtime.getURL(``)))return Q9(e.sourceTabId,e.text,e.route).then(e=>n({ok:!0,...e}),e=>n({ok:!1,error:e.message})),!0}),chrome.tabs.onRemoved.addListener(e=>{Z9.delete(e);for(let[t,n]of Z9)n===e&&Z9.delete(t)}),jc().catch(()=>void 0),chrome.runtime.onInstalled.addListener(e=>{jc().catch(()=>void 0),e.reason===`install`&&chrome.tabs.create({url:chrome.runtime.getURL(`/welcome.html`)})}),chrome.runtime.onMessage.addListener((e,t,n)=>{let r=e;if(r?.type===`nb.data`&&t.id===chrome.runtime.id)return(r.op===`delete-all`?X9.deleteAll():Promise.reject(Error(`unknown request`))).then(()=>n({ok:!0}),e=>n({ok:!1,error:String(e)})),!0}),chrome.alarms?.onAlarm.addListener(()=>void 0),X9.restore().catch(e=>console.error(`[runs] restore failed`,e)),Ege(),chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`voice.stopTask`&&t.id===chrome.runtime.id&&(async()=>{let n=Number.isInteger(e.taskTabId)?e.taskTabId:t.tab?.id;if(!n&&t.url===chrome.runtime.getURL(`home.html`)&&Number.isInteger(e.sourceTabId)){let r=await chrome.tabs.get(e.sourceTabId).catch(()=>void 0);r&&(r.url===t.url||[`chrome://newtab/`,`chrome://new-tab-page/`].includes(r.url??``))&&(n=r.id)}if(!n)return;let r=Z9.get(n)??n,i={tabId:null,conversationId:null,sink:()=>{}};try{await X9.handle(i,{type:`subscribe`,tabId:r}),i.conversationId&&await X9.handle(i,{type:`stop`,conversationId:i.conversationId})}finally{i.unsubscribe?.()}})()}),chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`voice.openPanel`&&t.id===chrome.runtime.id&&(Number.isInteger(e.taskTabId)?(chrome.tabs.update(e.taskTabId,{active:!0}).catch(()=>{}),Pc(e.taskTabId)):t.tab?.id&&Pc(t.tab.id))});chrome.runtime.onMessage.addListener((e,t)=>{e?.type===`va.followUp`&&t.id===chrome.runtime.id&&typeof e.text==`string`&&e.text.trim()&&Number.isInteger(e.taskTabId)&&(async()=>{let i={tabId:null,conversationId:null,sink:()=>{}};try{await X9.handle(i,{type:`subscribe`,tabId:e.taskTabId});await X9.handle(i,{type:`send`,tabId:e.taskTabId,conversationId:i.conversationId??e.conversationId,text:e.text.trim().slice(0,4e3),attachments:[],context:[],mode:`ask`});console.info(`[va] follow-up sent to task`,e.conversationId)}catch(n){console.warn(`[va] follow-up failed`,n)}finally{i.unsubscribe?.()}})()});
 globalThis.__vaRM=X9;globalThis.__vaDB={K5,q5,Q5};globalThis.__vaMetaKey=VN;
 /* va: answer a question or approval from the on-page popup or the Tasks page (the side panel's answers go the same way). */
 chrome.runtime.onMessage.addListener((e,t,n)=>{if(e?.type!==`va.answer`||t.id!==chrome.runtime.id||typeof e.promptId!==`string`)return;let a=e.answer;if(!(typeof a===`string`&&[`approve`,`decline`,`given-back`,`cancelled`,`yes`,`no`].includes(a)||a&&typeof a===`object`&&[`continue`,`cancel`].includes(a.outcome)&&(a.data===void 0||typeof a.data===`string`))){n({ok:!1,error:`unsupported answer`});return}(async()=>{let r=await X9.broker.answer(e.promptId,typeof a===`object`?{outcome:a.outcome,...a.data===void 0?{}:{data:a.data.slice(0,4e3)}}:a);console.info(`[va] answered from the popup:`,typeof a===`object`?a.outcome:a,r?``:`(it was no longer open)`);return{ok:!!r}})().then(n,r=>n({ok:!1,error:r.message}));return!0});

@@ -57,6 +57,21 @@ The agent writes flows itself. It reads the page's lists and fields with `inspec
 
 Before this change the same "ask Claude" question took 13 calls and about 95 s.
 
+## Finding, adopting and making flows automatically
+
+- **Before every task** the extension looks for a flow that does it: among saved flows (by words) and in the online library (`POST /api/resolve`, by words and meaning, multilingual). The lookup starts while the voice request is routed and waits at most 1.5 s. The agent's first instructions then say one of:
+  - "run_flow X as your first step" (saved or library flow);
+  - "flows that may do this: …";
+  - "no flow does this; do it yourself (no need to call find_flows)".
+- **Repeated tasks become flows by default.** When the same kind of task comes back and no flow covers it:
+  - the extension adopts a library flow for it (asking first if that flow clicks, types or uses AI);
+  - otherwise an agent writes and tests one in the background.
+  - At most 3 a day, with a note on the page and an off switch on the Tasks page.
+- **The library learns.**
+  - After a library flow works, it gets the request with the values taken out ("search youtube for {query}"), to match later requests.
+  - Kinds of task with no flow are reported to `/api/wanted` (kind, short name, site) so other agents can build them.
+  - Both can be turned off on the Tasks page.
+
 ## Memory, views and suggested flows
 
 - **Memory:** facts about the user (name, city, preferences) are saved to `va.memory`. The Tasks page sets the mode:

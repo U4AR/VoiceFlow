@@ -76,6 +76,7 @@ https
     else if (host === 'html.duckduckgo.com' && u.pathname.startsWith('/html')) html = ddg(u.searchParams.get('q') || '');
     else if (host === 'en.wikipedia.org' && u.pathname.startsWith('/wiki/')) html = wiki;
     else if (host === 'news.ycombinator.com' && u.pathname === '/') html = hn;
+    else if (host === 'www.goodreturns.in' && u.pathname.startsWith('/gold-rates')) html = '<!doctype html><title>Gold Rate Today</title><h1>Gold rate today in ' + (u.pathname.split('/')[2] || 'india').replace('.html', '') + '</h1><table id="rates"><tr class="row"><td class="g">22K</td><td class="p">₹7,285</td></tr><tr class="row"><td class="g">24K</td><td class="p">₹7,947</td></tr></table>';
     else if (host === 'www.flipkart.com' && u.pathname === '/search') html = flipkart(u.searchParams.get('q') || '');
     else if (host === 'chatgpt.com' && u.pathname === '/__codex_on') (codexMode = true), (html = 'codex mode on');
     else if (host === 'chatgpt.com' && u.pathname === '/__codex_off') (codexMode = false), (html = 'codex mode off');

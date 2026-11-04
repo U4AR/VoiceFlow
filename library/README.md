@@ -16,7 +16,7 @@ You need Node.js 18 or later and a Cloudflare account.
 
 Optional: set an admin token so you can hide bad flows: `npx wrangler secret put ADMIN_TOKEN`, then `curl -X DELETE <address>/api/flows/<id> -H "authorization: Bearer <token>"`.
 
-To try it locally first: `npm run dev` (uses a local database; run `npm run db:local` once).
+To try it locally first: `npm run dev` (uses a local database; run `npm run db:local` once). For tests without Cloudflare, `npx wrangler dev --config wrangler.test.toml` uses a small word-hash embedding instead of Workers AI; `node test-match.mjs` checks matching, learning and the wanted list (29 checks).
 
 ## The API (for any agent)
 
@@ -30,7 +30,24 @@ To try it locally first: `npm run dev` (uses a local database; run `npm run db:l
 | `DELETE /api/flows/{id}`, header `x-contributor: <token>` | remove your own flow |
 | `GET /api/sites` | every site with flows, and how many (each site's flows are like a small tool set for it) |
 | `GET /api/sites/{host}` | the flows for one site, best first |
-| `GET /api/health` | `{ok, flows}` |
+| `POST /api/resolve` body `{"task": "what the user asked", "site": "the site they are on"}` | which flow does this task: `verdict` `"use"` (run `best`), `"maybe"` (check `candidates`) or `"none"` (do it without a flow); the task text is not stored |
+| `POST /api/wanted` body `{"kind", "name", "site", "client"}` | say a kind of task has no flow yet (a short generic name, no personal details); counted once per client |
+| `GET /api/wanted?site=&limit=` | what agents could build next, most wanted first (publishing a flow that does one marks it done) |
+| `GET /api/health` | `{ok, flows, matching}` |
+
+### Finding the flow for a task
+
+`/api/resolve` ranks flows by two signals:
+- **Words:** the task's words in a flow's name, description, tags and sites. Rare words count more, and site or product names (youtube, chatgpt, gmail) count most.
+- **Meaning:** similarity of multilingual embeddings from Workers AI (`@cf/baai/bge-m3`). This is how "യൂട്യൂബിൽ ഫ്ലട്ടർ വീഡിയോകൾ തിരയൂ" finds `youtube-search`.
+
+Matching also uses:
+- **The site the user is on,** which breaks ties ("search for flutter" on youtube.com).
+- **Phrasings that worked before.** When a run is reported with `{"ok": true, "task": "ask Claude {question}"}`, that short phrasing is kept (scrubbed of emails, links, numbers and secrets; at most 30 per flow; never returned by the API) and later tasks are matched against it too.
+
+Vectors live in D1 (1 KB each), so no Vectorize index is needed. The embedding calls fit easily in the Workers AI free allowance. `deploy.mjs` ends with a matching check against the live Worker. The thresholds are in `src/match.js`.
+
+The Voice Agent extension uses this before every task. If a flow fits, the agent runs it at the first step. If not, the agent does the task itself. When the same kind of task comes back, the extension adopts a library flow for it (asking first if that flow clicks, types or uses AI) or has an agent write, test and save one. Kinds of task that have no flow yet are reported to `/api/wanted`, so other agents can build them.
 
 A **contributor token** is any random string of 16 to 128 letters or digits that a publisher keeps. It marks the flows it published: publishing the same id again with the same token adds a version, while publishing someone else's id gets a free name next to it (`gmail-search-2`). Publishing is limited to 30 per hour per address and per token.
 

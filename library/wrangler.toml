@@ -14,3 +14,7 @@ run_worker_first = ["/api/*"]
 binding = "DB"
 database_name = "voice-agent-flows"
 database_id = "00000000-0000-0000-0000-000000000000"
+
+# Workers AI (free plan: 10,000 units a day; matching uses a few per task): embeddings that match tasks to flows by meaning.
+[ai]
+binding = "AI"

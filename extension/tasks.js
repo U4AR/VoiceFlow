@@ -397,7 +397,13 @@ renderMcp();
 
 // ---------- Suggested flows, views, memory ----------
 async function renderMore() {
-  const r = await chrome.storage.local.get(['va.patterns', 'va.views', 'va.memory', 'va.memory.mode']);
+  const r = await chrome.storage.local.get(['va.patterns', 'va.views', 'va.memory', 'va.memory.mode', 'va.flows.auto', 'va.flows.learn', 'va.autoFlows']);
+  $('autoFlows').checked = r['va.flows.auto'] !== false;
+  $('flowLearn').checked = r['va.flows.learn'] !== false;
+  const made = (r['va.autoFlows'] || []).slice(-5).reverse();
+  $('autoLog').textContent = made.length
+    ? 'Recently: ' + made.map((x) => (x.how === 'library' ? '“' + x.kind + '” → ' + x.id + ' from the library' : '“' + x.kind + '” → an agent wrote a flow') + ' (' + new Date(x.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ')').join('; ')
+    : '';
   const pats = Object.values(r['va.patterns'] || {}).filter((p) => p.suggest).sort((a, b) => b.count - a.count);
   const pb = $('patterns');
   pb.textContent = '';
@@ -451,7 +457,9 @@ $('memAdd').onsubmit = async (e) => {
   $('memFact').value = '';
   if (r && r.saved === false) $('memFact').placeholder = r.reason || 'Not saved';
 };
+$('autoFlows').onchange = () => chrome.storage.local.set({ 'va.flows.auto': $('autoFlows').checked });
+$('flowLearn').onchange = () => chrome.storage.local.set({ 'va.flows.learn': $('flowLearn').checked });
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area === 'local' && (ch['va.patterns'] || ch['va.views'] || ch['va.memory'] || ch['va.memory.mode'])) renderMore();
+  if (area === 'local' && (ch['va.patterns'] || ch['va.views'] || ch['va.memory'] || ch['va.memory.mode'] || ch['va.autoFlows'] || ch['va.flows.auto'] || ch['va.flows.learn'])) renderMore();
 });
 renderMore();
